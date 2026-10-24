@@ -30,6 +30,7 @@
                 <input type="password" id="admin_password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest" placeholder="Nhập mật khẩu..." required>
                 <button type="submit" id="btn_login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-md transition">🔓 ĐĂNG NHẬP</button>
                 <p id="login_status" class="text-red-500 text-sm font-semibold hidden"></p>
+                <p class="text-xs text-gray-400 mt-2">*Lưu ý: Lần tải đầu tiên có thể mất 30-50s để khởi động máy chủ đám mây.</p>
             </form>
         </div>
     </div>
@@ -48,7 +49,9 @@
         </div>
 
         <div class="max-w-7xl mx-auto px-6 pb-12">
+            <!-- ============================================== -->
             <!-- TAB 1: TRẠM ĐĂNG BÀI -->
+            <!-- ============================================== -->
             <div id="tab_create" class="main-tab block">
                 <div class="flex flex-col lg:flex-row gap-8">
                     <!-- NỬA TRÁI: FORM -->
@@ -61,14 +64,17 @@
                                     <button type="button" id="btn_ai" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">✨ Viết</button>
                                 </div>
                             </div>
+                            
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-1">Nội dung bài viết</label>
-                                <textarea id="content" rows="5" class="w-full p-3 border border-gray-300 rounded-lg" required></textarea>
+                                <textarea id="content" rows="5" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" required></textarea>
                             </div>
+                            
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-1">Đính kèm Hình ảnh / Video (MP4)</label>
                                 <input type="file" id="media_files" accept="image/*,video/*" multiple class="w-full p-2 border border-gray-300 rounded bg-gray-50 cursor-pointer">
                             </div>
+                            
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Kênh xuất bản</label>
                                 <div class="flex gap-4">
@@ -77,6 +83,25 @@
                                     <label class="flex items-center"><input type="checkbox" name="platform" value="zalo" class="w-5 h-5 text-blue-400" checked><span class="ml-2">Zalo OA</span></label>
                                 </div>
                             </div>
+
+                            <!-- ĐÃ KHÔI PHỤC: CHẾ ĐỘ HẸN GIỜ ĐĂNG BÀI -->
+                            <div class="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Chế độ đăng</label>
+                                <div class="flex gap-4 mb-3">
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="radio" name="post_mode" value="now" class="w-4 h-4 text-blue-600" checked>
+                                        <span class="ml-2">Đăng ngay</span>
+                                    </label>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="radio" name="post_mode" value="schedule" class="w-4 h-4 text-blue-600">
+                                        <span class="ml-2">Lên lịch (Hẹn giờ)</span>
+                                    </label>
+                                </div>
+                                <div id="schedule_box" class="hidden">
+                                    <input type="datetime-local" id="scheduled_time" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+
                             <div class="flex gap-3 mt-6">
                                 <button type="button" id="btn_draft" class="w-1/3 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow">📝 LƯU NHÁP</button>
                                 <button type="submit" id="btn_submit" class="w-2/3 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow">🚀 XUẤT BẢN</button>
@@ -125,7 +150,9 @@
                 </div>
             </div>
 
+            <!-- ============================================== -->
             <!-- TAB 2: QUẢN LÝ BÀI VIẾT -->
+            <!-- ============================================== -->
             <div id="tab_manage" class="main-tab hidden bg-white p-6 rounded-xl shadow-md">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-gray-800">📋 Quản Lý & Lịch Sử Bài Đăng</h2>
@@ -163,10 +190,17 @@
     </div>
 
     <!-- JAVASCRIPT XỬ LÝ LÔGIC -->
-    <script>
-        const API_BASE = 'http://localhost:3000/api';
+    <script
+        netlify-drawer, #netlify-badge, .netlify-badge { 
+            display: none !important;
+        }>
+        const API_BASE = 'https://binbin-autopost-backend.onrender.com/api'; // Đường link Render của anh
         let selectedFiles = []; 
         let globalPostsData = []; 
+
+        // --- ĐÁNH THỨC MÁY CHỦ RENDER (CHỐNG CHẬM KHI KHỞI ĐỘNG) ---
+        // Gửi một tín hiệu rỗng để máy chủ Render thức dậy ngay khi tải xong giao diện web
+        fetch(`${API_BASE}/posts`).catch(() => console.log('Đang đánh thức máy chủ...'));
 
         // --- HỆ THỐNG ĐĂNG NHẬP ---
         function checkAuth() {
@@ -179,7 +213,7 @@
                 document.getElementById('app_wrapper').classList.add('hidden');
             }
         }
-        checkAuth(); // Kiểm tra ngay khi tải trang
+        checkAuth(); 
 
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -187,7 +221,10 @@
             const btn = document.getElementById('btn_login');
             const status = document.getElementById('login_status');
             
-            btn.innerText = 'ĐANG KIỂM TRA...'; btn.disabled = true;
+            // Cập nhật dòng chữ cảnh báo cho Render Free Tier
+            btn.innerText = 'ĐANG KHỞI ĐỘNG MÁY CHỦ (Xin chờ 30s)...'; 
+            btn.disabled = true;
+            
             try {
                 const res = await fetch(`${API_BASE}/login`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -202,19 +239,15 @@
                     status.innerText = data.message; status.classList.remove('hidden');
                 }
             } catch (error) {
-                status.innerText = 'Lỗi kết nối đến máy chủ!'; status.classList.remove('hidden');
-            } finally { btn.innerText = '🔓 ĐĂNG NHẬP'; btn.disabled = false; }
+                status.innerText = 'Máy chủ đang ngủ. Vui lòng thử bấm lại Đăng nhập!'; 
+                status.classList.remove('hidden');
+            } finally { 
+                btn.innerText = '🔓 ĐĂNG NHẬP'; btn.disabled = false; 
+            }
         });
 
-        function logout() {
-            localStorage.removeItem('bb_auth_token');
-            checkAuth();
-        }
-
-        // Hàm hỗ trợ đính kèm Token vào API
-        function getHeaders() {
-            return { 'Authorization': `Bearer ${localStorage.getItem('bb_auth_token')}` };
-        }
+        function logout() { localStorage.removeItem('bb_auth_token'); checkAuth(); }
+        function getHeaders() { return { 'Authorization': `Bearer ${localStorage.getItem('bb_auth_token')}` }; }
 
         // --- CÁC HÀM XỬ LÝ ỨNG DỤNG ---
         function switchMainTab(tabId, btn) {
@@ -240,7 +273,20 @@
             document.getElementById('zalo_title').innerText = text.split('\n')[0]; document.getElementById('zalo_desc').innerText = text;
         });
 
-        // NÂNG CẤP MEDIA: Đổi sang object-contain hiển thị 100% tỷ lệ gốc
+        // --- LOGIC HẸN GIỜ ĐĂNG BÀI ---
+        document.querySelectorAll('input[name="post_mode"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const scheduleBox = document.getElementById('schedule_box');
+                if (this.value === 'schedule') {
+                    scheduleBox.classList.remove('hidden');
+                    document.getElementById('scheduled_time').required = true;
+                } else {
+                    scheduleBox.classList.add('hidden');
+                    document.getElementById('scheduled_time').required = false;
+                }
+            });
+        });
+
         function getMediaTag(url, type) {
             return type.includes('video') ? `<video src="${url}" class="w-full h-full object-contain bg-black" muted loop autoplay playsinline controls></video>` : `<img src="${url}" class="w-full h-full object-contain bg-black">`;
         }
@@ -268,13 +314,19 @@
             });
         });
 
-        // API ĐĂNG BÀI (Có đính kèm Token)
+        // API ĐĂNG BÀI 
         async function submitForm(isDraft) {
             const btnSubmit = document.getElementById('btn_submit'); const btnDraft = document.getElementById('btn_draft'); const statusMsg = document.getElementById('submit_status');
             const content = document.getElementById('content').value;
             const platforms = Array.from(document.querySelectorAll('input[name="platform"]:checked')).map(cb => cb.value);
             
+            // Lấy dữ liệu hẹn giờ
+            const isPostNow = document.querySelector('input[name="post_mode"]:checked').value === 'now';
+            const scheduledTime = document.getElementById('scheduled_time').value;
+
             if (platforms.length === 0) return alert('Chọn ít nhất 1 kênh!');
+            if (!isPostNow && !scheduledTime && !isDraft) return alert('Vui lòng chọn thời gian hẹn giờ!');
+
             btnSubmit.disabled = btnDraft.disabled = true; statusMsg.className = 'text-center mt-2 font-bold text-blue-600';
 
             try {
@@ -282,12 +334,7 @@
                 if (selectedFiles.length > 0) {
                     statusMsg.innerText = '⏳ Đang tải file lên mây...';
                     const formData = new FormData(); selectedFiles.forEach(file => formData.append('mediaFiles', file));
-                    
-                    const uploadRes = await fetch(`${API_BASE}/upload`, { 
-                        method: 'POST', 
-                        headers: getHeaders(), // THÊM TOKEN
-                        body: formData 
-                    });
+                    const uploadRes = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: getHeaders(), body: formData });
                     const uploadData = await uploadRes.json();
                     if (!uploadData.success) throw new Error(uploadData.message);
                     mediaUrls = uploadData.urls; 
@@ -296,9 +343,8 @@
                 statusMsg.innerText = isDraft ? '⏳ Đang lưu bản nháp...' : '⏳ Đang cấu hình bài viết...';
                 
                 const publishRes = await fetch(`${API_BASE}/publish`, {
-                    method: 'POST', 
-                    headers: { ...getHeaders(), 'Content-Type': 'application/json' }, // THÊM TOKEN
-                    body: JSON.stringify({ content, mediaUrls, platforms, isPostNow: true, scheduledTime: null, isDraft })
+                    method: 'POST', headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, mediaUrls, platforms, isPostNow, scheduledTime, isDraft })
                 });
                 
                 const publishData = await publishRes.json();
@@ -315,14 +361,14 @@
         document.getElementById('postForm').addEventListener('submit', (e) => { e.preventDefault(); submitForm(false); });
         document.getElementById('btn_draft').addEventListener('click', () => { if (document.getElementById('content').value) submitForm(true); else alert('Nhập nội dung trước khi lưu!'); });
 
-        // API BẢNG QUẢN LÝ (Có đính kèm Token)
         function getBadge(status, platform) {
             if (!status) return '';
             let color = status === 'draft' ? 'bg-gray-200 text-gray-700' : (status === 'pending' ? 'bg-blue-100 text-blue-700' : (status === 'processing' ? 'bg-yellow-100 text-yellow-700' : (status === 'published' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')));
-            let label = status === 'draft' ? 'Nháp' : (status === 'pending' ? 'Chờ' : (status === 'processing' ? 'Đang đăng' : (status === 'published' ? 'Xong' : 'Lỗi')));
+            let label = status === 'draft' ? 'Nháp' : (status === 'pending' ? 'Chờ' : (status === 'processing' ? 'Đang xử lý' : (status === 'published' ? 'Xong' : 'Lỗi')));
             return `<div class="text-xs ${color} px-2 py-1 rounded mb-1 font-semibold text-center">${platform.toUpperCase()}: ${label}</div>`;
         }
 
+        // BẢNG QUẢN LÝ (CÓ HẸN GIỜ)
         async function loadPosts() {
             const tbody = document.getElementById('table_body');
             tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Đang tải dữ liệu...</td></tr>';
@@ -333,9 +379,18 @@
                     globalPostsData = data.posts;
                     tbody.innerHTML = data.posts.map(p => {
                         const hasDraft = (p.status_facebook === 'draft' || p.status_instagram === 'draft' || p.status_zalo === 'draft');
+                        
+                        let timeHtml = '';
+                        if (p.scheduled_time) {
+                            timeHtml = `<div class="text-blue-700 font-bold mb-1">🕒 Hẹn đăng:<br>${new Date(p.scheduled_time).toLocaleString('vi-VN')}</div>
+                                        <div class="text-[11px] text-gray-500">Tạo: ${new Date(p.created_at).toLocaleString('vi-VN')}</div>`;
+                        } else {
+                            timeHtml = `<div class="text-gray-700 font-medium">${new Date(p.created_at).toLocaleString('vi-VN')}</div>`;
+                        }
+
                         return `
                         <tr class="border-b hover:bg-gray-50 transition">
-                            <td class="px-4 py-3 text-xs text-gray-500">${new Date(p.created_at).toLocaleString('vi-VN')}</td>
+                            <td class="px-4 py-3 text-xs">${timeHtml}</td>
                             <td class="px-4 py-3"><div class="line-clamp-2 text-gray-800">${p.content || ''}</div></td>
                             <td class="px-4 py-3 text-center font-bold text-blue-600">${p.media_urls ? p.media_urls.length : 0} file</td>
                             <td class="px-4 py-3">${getBadge(p.status_facebook, 'fb')}${getBadge(p.status_instagram, 'ig')}${getBadge(p.status_zalo, 'zalo')}</td>
@@ -343,7 +398,7 @@
                                 <div class="flex flex-col gap-1.5">
                                     <button onclick="openModal('${p.id}')" class="text-white bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded text-xs w-full">👁️ Xem</button>
                                     ${hasDraft ? `<button onclick="publishPost('${p.id}')" class="text-white bg-green-500 hover:bg-green-600 px-3 py-1 rounded text-xs w-full">🚀 Đăng</button>` : ''}
-                                    <button onclick="deletePost('${p.id}')" class="text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-xs w-full">🗑️ Xóa</button>
+                                    <button onclick="deletePost('${p.id}')" class="text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-xs w-full">🗑️ Hủy / Xóa</button>
                                 </div>
                             </td>
                         </tr>
@@ -353,7 +408,7 @@
         }
 
         async function deletePost(id) {
-            if(!confirm('Xóa bài viết này?')) return;
+            if(!confirm('Xóa bản ghi này khỏi hệ thống? (Không ảnh hưởng bài đã đăng thành công trên Fanpage/Zalo)')) return;
             try {
                 const res = await fetch(`${API_BASE}/posts/${id}`, { method: 'DELETE', headers: getHeaders() });
                 const data = await res.json();

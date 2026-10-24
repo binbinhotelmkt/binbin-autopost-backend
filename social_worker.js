@@ -89,7 +89,7 @@ async function publishToZalo(post, zaloTokenRow, isRetry = false) {
 
         if (publishRes.data.error === 0) {
             console.log(`[Zalo] ✅ Đăng thành công! Article ID: ${publishRes.data.data.token}`);
-            return true;
+            return publishRes.data.data.token;
         } else {
             console.error(`[Zalo] ❌ Lỗi tạo bài:`, publishRes.data.message);
             return false;
@@ -143,7 +143,7 @@ async function publishToInstagram(post, igAccountId, pageToken) {
         });
 
         console.log(`[Instagram] ✅ Đăng thành công! IG Post ID: ${publishRes.data.id}`);
-        return true;
+        return publishRes.data.id;
     } catch (error) {
         console.error(`[Instagram] ❌ Lỗi:`, error.response?.data?.error?.message || error.message);
         return false;
@@ -178,7 +178,7 @@ async function publishToFacebook(post, pageId, pageToken) {
         }
         const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/feed`, payload);
         console.log(`[Facebook] ✅ Đăng thành công! Post ID: ${res.data.id}`);
-        return true;
+        return res.data.id;
     } catch (error) {
         console.error(`[Facebook] ❌ Lỗi:`, error.response?.data?.error?.message || error.message);
         return false;
@@ -211,34 +211,81 @@ async function processAllSocialPosts() {
         }).eq('id', post.id);
     }
 
-    // 3. XỬ LÝ ĐĂNG BÀI ĐỘC LẬP TỪNG KÊNH
+    // 3. XỬ LÝ ĐĂNG BÀI ĐỘC LẬP TỪNG KÊNH VÀ THU THẬP ID
     for (const post of posts) {
         console.log(`\n📦 Đang xử lý bài viết ID: ${post.id}`);
         let updateData = {}; 
 
         // KÊNH FACEBOOK
         if (post.status_facebook === 'pending' && tokens['facebook']) {
-            const fbSuccess = await publishToFacebook(post, tokens['facebook'].page_id, tokens['facebook'].access_token);
-            updateData.status_facebook = fbSuccess ? 'published' : 'failed';
+            const fbPostId = await publishToFacebook(post, tokens['facebook'].page_id, tokens['facebook'].access_token);
+            if (fbPostId) {
+                updateData.status_facebook = 'published';
+                updateData.fb_post_id = fbPostId; // Lưu mã biên lai Facebook
+            } else {
+                updateData.status_facebook = 'failed';
+            }
         }
 
-        // KÊNH INSTAGRAM (ĐÃ TÁCH RA ĐỘC LẬP)
+        // KÊNH INSTAGRAM
         if (post.status_instagram === 'pending' && tokens['instagram']) {
-            const igSuccess = await publishToInstagram(post, tokens['instagram'].page_id, tokens['instagram'].access_token);
-            updateData.status_instagram = igSuccess ? 'published' : 'failed';
+            const igPostId = await publishToInstagram(post, tokens['instagram'].page_id, tokens['instagram'].access_token);
+            if (igPostId) {
+                updateData.status_instagram = 'published';
+                updateData.ig_post_id = igPostId; // Lưu mã biên lai Instagram
+            } else {
+                updateData.status_instagram = 'failed';
+            }
         }
 
         // KÊNH ZALO
         if (post.status_zalo === 'pending' && tokens['zalo']) {
-            const zaloSuccess = await publishToZalo(post, tokens['zalo']);
-            updateData.status_zalo = zaloSuccess ? 'published' : 'failed';
+            const zaloArticleId = await publishToZalo(post, tokens['zalo']);
+            if (zaloArticleId) {
+                updateData.status_zalo = 'published';
+                updateData.zalo_article_id = zaloArticleId; // Lưu mã biên lai Zalo
+            } else {
+                updateData.status_zalo = 'failed';
+            }
         }
 
-        // 4. CHỐT KẾT QUẢ VÀO DATABASE
+        // 4. CHỐT KẾT QUẢ VÀ BÓP CÒ DỌN RÁC SUPABASE
         if (Object.keys(updateData).length > 0) {
+            
+            // 4a. Cập nhật các ID và trạng thái vào Database trước
             await supabase.from('social_posts').update(updateData).eq('id', post.id);
-            console.log(`✅ Đã cập nhật trạng thái cuối:`, updateData);
+            console.log(`✅ Đã chốt mã biên lai vào Database:`, updateData);
+
+            // 4b. THUẬT TOÁN DỌN RÁC (Garbage Collection)
+            // Chỉ xóa file nếu bài này được đánh dấu là Đăng Thành Công trên TẤT CẢ các kênh mà nó được hẹn đăng.
+            const isAllChannelsFinished = 
+                (post.status_facebook !== 'pending' || updateData.status_facebook === 'published') &&
+                (post.status_instagram !== 'pending' || updateData.status_instagram === 'published') &&
+                (post.status_zalo !== 'pending' || updateData.status_zalo === 'published');
+
+            if (isAllChannelsFinished && post.media_urls && post.media_urls.length > 0) {
+                try {
+                    // Tách tên file từ đường link đầy đủ. Chú ý: Đổi chữ 'binbin_media' thành đúng tên bucket Supabase của anh.
+                    const filePaths = post.media_urls.map(url => {
+                        const parts = url.split('/binbin_media/'); 
+                        return parts[1];
+                    });
+
+                    // Xóa vĩnh viễn file trên Storage
+                    const { error: removeError } = await supabase.storage
+                        .from('binbin_media') // Đổi tên bucket tại đây
+                        .remove(filePaths);
+
+                    if (!removeError) {
+                        // Xóa đường dẫn file trong bảng dữ liệu để giao diện biết là đã dọn dẹp
+                        await supabase.from('social_posts').update({ media_urls: null }).eq('id', post.id);
+                        console.log(`🧹 Dọn rác thành công: Đã xóa ${filePaths.length} file đính kèm để tiết kiệm dung lượng.`);
+                    }
+                } catch (err) {
+                    console.error('Lỗi trong quá trình dọn rác Supabase:', err);
+                }
+            }
         }
     }
 }
-export { processAllSocialPosts };
+    export { processAllSocialPosts };
