@@ -163,31 +163,41 @@ async function publishToInstagram(post, igAccountId, pageToken) {
 }
 
 // ==========================================
-// --- MODULE FACEBOOK (BẢN HOÀN THIỆN TỐI ƯU) ---
+// --- MODULE FACEBOOK (TỐI ƯU HÓA HIỂN THỊ) ---
 // ==========================================
 async function publishToFacebook(post, pageId, pageToken) {
     try {
         let payload = { message: post.content, access_token: pageToken };
         if (post.attached_link) payload.link = post.attached_link;
 
-        // BẮT BUỘC TẢI ẢNH NGẦM TRƯỚC ĐỂ TRÁNH XUNG ĐỘT VỚI DỌN RÁC
         if (post.media_urls && post.media_urls.length > 0) {
-            console.log(`[Facebook] - Đang ép tải ngầm ${post.media_urls.length} file vào kho Meta...`);
-            let attached_media = [];
-            for (const url of post.media_urls) {
-                const resPhoto = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, null, {
-                    params: { url: url, published: false, access_token: pageToken }
-                });
-                if (resPhoto.data.id) attached_media.push({ media_fbid: resPhoto.data.id });
+            if (post.media_urls.length === 1) {
+                // CHIẾN THUẬT 1: Nếu chỉ có 1 ảnh, đăng thẳng đứng ra tường (Tỷ lệ hiển thị 100%)
+                payload.url = post.media_urls[0];
+                payload.published = true;
+                const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, payload);
+                console.log(`[Facebook] ✅ Đăng 1 ảnh thành công! Post ID: ${res.data.post_id || res.data.id}`);
+                return res.data.post_id || res.data.id;
+            } else {
+                // CHIẾN THUẬT 2: Nếu có nhiều ảnh, tải ngầm rồi gom thành Album
+                console.log(`[Facebook] - Đang tải ngầm ${post.media_urls.length} ảnh...`);
+                let attached_media = [];
+                for (const url of post.media_urls) {
+                    const resPhoto = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, null, {
+                        params: { url: url, published: false, access_token: pageToken }
+                    });
+                    if (resPhoto.data.id) attached_media.push({ media_fbid: resPhoto.data.id });
+                }
+                if (attached_media.length > 0) payload.attached_media = attached_media;
             }
-            if (attached_media.length > 0) payload.attached_media = attached_media;
         }
         
-        console.log(`[Facebook] - Đang xuất bản bài viết lên Bảng tin (Feed)...`);
-        const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/feed`, payload);
-        
-        console.log(`[Facebook] ✅ Đăng thành công! Post ID: ${res.data.id}`);
-        return res.data.id;
+        // Lệnh này sẽ chạy cho bài viết nhiều ảnh, hoặc bài chỉ có chữ (không có ảnh)
+        if (!post.media_urls || post.media_urls.length !== 1) {
+            const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/feed`, payload);
+            console.log(`[Facebook] ✅ Đăng feed thành công! Post ID: ${res.data.id}`);
+            return res.data.id;
+        }
     } catch (error) {
         console.error(`[Facebook] ❌ Lỗi:`, error.response?.data?.error?.message || error.message);
         return false;
@@ -272,7 +282,7 @@ async function processAllSocialPosts() {
                 (post.status_zalo !== 'pending' || updateData.status_zalo === 'published');
 
             if (isAllChannelsFinished && post.media_urls && post.media_urls.length > 0) {
-                console.log(`⏳ Hệ thống đang cho Meta/Zalo 15 giây để xử lý CDN trước khi dọn rác...`);
+                console.log(`⏳ Đang cho Facebook/Zalo 60 giây để tải ảnh trước khi dọn rác...`);
                 
                 setTimeout(async () => {
                     try {
@@ -281,19 +291,18 @@ async function processAllSocialPosts() {
                             return parts[1];
                         });
 
-                        // Đã tháo khóa: Bắn lệnh xóa vĩnh viễn file trên Supabase
                         const { error: removeError } = await supabase.storage
                             .from('social_media')
                             .remove(filePaths);
 
                         if (!removeError) {
                             await supabase.from('social_posts').update({ media_urls: null }).eq('id', post.id);
-                            console.log(`🧹 Dọn rác thành công: Đã xóa sạch ${filePaths.length} file đính kèm!`);
+                            console.log(`🧹 Dọn rác thành công: Đã xóa ${filePaths.length} file!`);
                         }
                     } catch (err) {
-                        console.error('Lỗi trong quá trình dọn rác Supabase:', err);
+                        console.error('Lỗi dọn rác:', err);
                     }
-                }, 15000); // Đếm ngược 15 giây
+                }, 60000); // Đổi 15000 thành 60000 tại đây
             }
         }
     }
