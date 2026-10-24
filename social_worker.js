@@ -163,34 +163,33 @@ async function publishToInstagram(post, igAccountId, pageToken) {
 }
 
 // ==========================================
-// --- MODULE FACEBOOK ---
+// --- MODULE FACEBOOK (ĐÃ ÉP TOÀN BỘ VÀO FEED) ---
 // ==========================================
 async function publishToFacebook(post, pageId, pageToken) {
     try {
         let payload = { message: post.content, access_token: pageToken };
         if (post.attached_link) payload.link = post.attached_link;
 
+        // Dù 1 hay nhiều ảnh, đều bắt Meta tải xong xuôi ảnh ngầm rồi mới đăng ra Bảng tin
         if (post.media_urls && post.media_urls.length > 0) {
-            if (post.media_urls.length === 1) {
-                payload.url = post.media_urls[0];
-                const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, payload);
-                console.log(`[Facebook] ✅ Đăng 1 ảnh thành công! Post ID: ${res.data.post_id || res.data.id}`);
-                return true;
-            } else {
-                console.log(`[Facebook] - Đang tải ngầm ${post.media_urls.length} ảnh...`);
-                let attached_media = [];
-                for (const url of post.media_urls) {
-                    const resPhoto = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, null, {
-                        params: { url: url, published: false, access_token: pageToken }
-                    });
-                    if (resPhoto.data.id) attached_media.push({ media_fbid: resPhoto.data.id });
-                }
-                if (attached_media.length > 0) payload.attached_media = attached_media;
+            console.log(`[Facebook] - Đang ép tải ngầm ${post.media_urls.length} file vào máy chủ Meta...`);
+            let attached_media = [];
+            for (const url of post.media_urls) {
+                // Tải vào kho ẩn của Meta
+                const resPhoto = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, null, {
+                    params: { url: url, published: false, access_token: pageToken }
+                });
+                if (resPhoto.data.id) attached_media.push({ media_fbid: resPhoto.data.id });
             }
+            if (attached_media.length > 0) payload.attached_media = attached_media;
         }
+        
+        console.log(`[Facebook] - Đang xuất bản bài viết lên Bảng tin (Feed)...`);
+        // Đăng toàn bộ nội dung và ảnh đã tải lên Feed
         const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/feed`, payload);
+        
         console.log(`[Facebook] ✅ Đăng thành công! Post ID: ${res.data.id}`);
-        return true;
+        return res.data.id;
     } catch (error) {
         console.error(`[Facebook] ❌ Lỗi:`, error.response?.data?.error?.message || error.message);
         return false;
