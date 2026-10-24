@@ -50,22 +50,33 @@ async function publishToZalo(post, zaloTokenRow, isRetry = false) {
         console.log(`[Zalo] - Đang xuất bản Article bằng link ảnh trực tiếp (Bản gốc)...`);
         const coverUrl = post.media_urls[0];
 
-        // GIỮ NGUYÊN PAYLOAD GỐC CỦA ANH
+        // 1. Tách bài viết thành mảng các dòng
+        const lines = post.content.split('\n');
+        
+        // 2. Bốc tách dòng đầu tiên làm Tiêu đề
+        let titleLine = lines[0].trim();
+        // Zalo giới hạn tiêu đề tối đa 150 ký tự, nên ta cắt an toàn ở mức 140
+        if (titleLine.length > 140) titleLine = titleLine.substring(0, 140) + "...";
+
+        // 3. Gộp toàn bộ các dòng phía dưới lại làm Nội dung (Body)
+        const bodyContent = lines.slice(1).join('\n').trim();
+
+        // 4. Đóng gói chuẩn gửi cho Zalo
         const payload = {
             "type": "normal",
-            "title": post.content.split('\n')[0].substring(0, 50) + "...",
+            "title": titleLine,
             "author": "Bin Bin Hotel",
             "cover": {
                 "cover_type": "photo",
                 "photo_url": coverUrl, 
                 "status": "show"
             },
-            // Đã vá lỗi giới hạn 300 ký tự của Zalo
-            "description": post.content.length > 290 ? post.content.substring(0, 290) + "..." : post.content,
+            // Mô tả bên ngoài tự động cắt lấy 290 chữ của phần nội dung
+            "description": bodyContent.length > 290 ? bodyContent.substring(0, 290) + "..." : bodyContent,
             "body": [
                 {
                     "type": "text",
-                    "content": post.content
+                    "content": bodyContent
                 }
             ],
             "status": "show"
@@ -162,9 +173,10 @@ async function publishToFacebook(post, pageId, pageToken) {
         if (post.media_urls && post.media_urls.length > 0) {
             if (post.media_urls.length === 1) {
                 payload.url = post.media_urls[0];
+                payload.published = true; // Ép Facebook xuất bản công khai
                 const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, payload);
                 console.log(`[Facebook] ✅ Đăng 1 ảnh thành công! Post ID: ${res.data.post_id || res.data.id}`);
-                return res.data.post_id || res.data.id; // Đã sửa lỗi return true
+                return res.data.post_id || res.data.id;
             } else {
                 console.log(`[Facebook] - Đang tải ngầm ${post.media_urls.length} ảnh...`);
                 let attached_media = [];
@@ -257,33 +269,34 @@ async function processAllSocialPosts() {
             await supabase.from('social_posts').update(updateData).eq('id', post.id);
             console.log(`✅ Đã chốt mã biên lai vào Database:`, updateData);
 
-            // 4b. THUẬT TOÁN DỌN RÁC (Garbage Collection)
-            // Chỉ xóa file nếu bài này được đánh dấu là Đăng Thành Công trên TẤT CẢ các kênh mà nó được hẹn đăng.
+            // 4b. THUẬT TOÁN DỌN RÁC (Đã thêm độ trễ 15s)
             const isAllChannelsFinished = 
                 (post.status_facebook !== 'pending' || updateData.status_facebook === 'published') &&
                 (post.status_instagram !== 'pending' || updateData.status_instagram === 'published') &&
                 (post.status_zalo !== 'pending' || updateData.status_zalo === 'published');
 
             if (isAllChannelsFinished && post.media_urls && post.media_urls.length > 0) {
-                try {
-                    // Đã đổi đúng tên kho chứa thành 'social_media' giống trong server.js
-                    const filePaths = post.media_urls.map(url => {
-                        const parts = url.split('/social_media/'); 
-                        return parts[1];
-                    });
+                console.log(`⏳ Hệ thống đang cho Meta/Zalo 15 giây để nạp ảnh trước khi dọn rác...`);
+                
+                setTimeout(async () => {
+                    try {
+                        const filePaths = post.media_urls.map(url => {
+                            const parts = url.split('/social_media/'); 
+                            return parts[1];
+                        });
 
-                    // Xóa vĩnh viễn file trên Storage
-                    const { error: removeError } = await supabase.storage
-                        .from('social_media') // Đã sửa thành social_media
-                        .remove(filePaths);
+                        const { error: removeError } = await supabase.storage
+                            .from('social_media')
+                            .remove(filePaths);
 
-                    if (!removeError) {
-                        await supabase.from('social_posts').update({ media_urls: null }).eq('id', post.id);
-                        console.log(`🧹 Dọn rác thành công: Đã xóa ${filePaths.length} file đính kèm để tiết kiệm dung lượng.`);
+                        if (!removeError) {
+                            await supabase.from('social_posts').update({ media_urls: null }).eq('id', post.id);
+                            console.log(`🧹 Dọn rác thành công: Đã xóa ${filePaths.length} file đính kèm!`);
+                        }
+                    } catch (err) {
+                        console.error('Lỗi trong quá trình dọn rác Supabase:', err);
                     }
-                } catch (err) {
-                    console.error('Lỗi trong quá trình dọn rác Supabase:', err);
-                }
+                }, 15000); // 15000 mili-giây = 15 giây
             }
         }
     }
