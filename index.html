@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bin Bin Hotel - Hệ Thống Đăng Bài</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .nav-btn.active { border-bottom: 3px solid #2563eb; color: #1e3a8a; font-weight: bold; }
+        .ig-carousel-dots { bottom: 10px; left: 50%; transform: translateX(-50%); }
+        ::-webkit-scrollbar { height: 6px; width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        
+        /* Màn hình khóa đăng nhập */
+        #login_overlay { backdrop-filter: blur(8px); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen relative">
+
+    <!-- MÀN HÌNH ĐĂNG NHẬP (BẢO MẬT) -->
+    <div id="login_overlay" class="fixed inset-0 bg-gray-900 bg-opacity-80 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+            <div class="w-16 h-16 bg-blue-800 rounded-full flex items-center justify-center text-white font-bold text-2xl mx-auto mb-4 shadow-lg">BB</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Bin Bin Hotel</h2>
+            <p class="text-gray-500 text-sm mb-6">Trạm Quản Lý Đăng Bài Đa Kênh</p>
+            
+            <form id="loginForm" class="space-y-4">
+                <input type="password" id="admin_password" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest" placeholder="Nhập mật khẩu..." required>
+                <button type="submit" id="btn_login" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-md transition">🔓 ĐĂNG NHẬP</button>
+                <p id="login_status" class="text-red-500 text-sm font-semibold hidden"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- WRAPPER ỨNG DỤNG (Bị ẩn cho đến khi đăng nhập) -->
+    <div id="app_wrapper" class="hidden">
+        <!-- THANH ĐIỀU HƯỚNG CHÍNH -->
+        <div class="bg-white shadow-sm mb-6">
+            <div class="max-w-7xl mx-auto px-6 flex justify-between items-center border-b border-gray-200">
+                <div class="flex gap-6">
+                    <button class="nav-btn active py-4 text-gray-600 font-medium hover:text-blue-600 transition" onclick="switchMainTab('tab_create', this)">🚀 Trạm Đăng Bài</button>
+                    <button class="nav-btn py-4 text-gray-600 font-medium hover:text-blue-600 transition" onclick="switchMainTab('tab_manage', this); loadPosts();">📋 Quản Lý Lịch Sử</button>
+                </div>
+                <button onclick="logout()" class="text-red-500 hover:text-red-700 font-semibold text-sm">🚪 Đăng xuất</button>
+            </div>
+        </div>
+
+        <div class="max-w-7xl mx-auto px-6 pb-12">
+            <!-- TAB 1: TRẠM ĐĂNG BÀI -->
+            <div id="tab_create" class="main-tab block">
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <!-- NỬA TRÁI: FORM -->
+                    <div class="w-full lg:w-1/2 bg-white p-6 rounded-xl shadow-md">
+                        <form id="postForm" class="space-y-5">
+                            <div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <label class="block text-sm font-semibold text-blue-800 mb-1">🤖 Yêu cầu AI soạn kịch bản:</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="ai_prompt" class="flex-1 p-2 border border-blue-300 rounded" placeholder="VD: Viết thông báo khai trương...">
+                                    <button type="button" id="btn_ai" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">✨ Viết</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Nội dung bài viết</label>
+                                <textarea id="content" rows="5" class="w-full p-3 border border-gray-300 rounded-lg" required></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-1">Đính kèm Hình ảnh / Video (MP4)</label>
+                                <input type="file" id="media_files" accept="image/*,video/*" multiple class="w-full p-2 border border-gray-300 rounded bg-gray-50 cursor-pointer">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Kênh xuất bản</label>
+                                <div class="flex gap-4">
+                                    <label class="flex items-center"><input type="checkbox" name="platform" value="facebook" class="w-5 h-5 text-blue-600" checked><span class="ml-2">Facebook</span></label>
+                                    <label class="flex items-center"><input type="checkbox" name="platform" value="instagram" class="w-5 h-5 text-pink-500" checked><span class="ml-2">Instagram</span></label>
+                                    <label class="flex items-center"><input type="checkbox" name="platform" value="zalo" class="w-5 h-5 text-blue-400" checked><span class="ml-2">Zalo OA</span></label>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 mt-6">
+                                <button type="button" id="btn_draft" class="w-1/3 bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 rounded-lg shadow">📝 LƯU NHÁP</button>
+                                <button type="submit" id="btn_submit" class="w-2/3 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow">🚀 XUẤT BẢN</button>
+                            </div>
+                            <p id="submit_status" class="text-center mt-2 font-medium"></p>
+                        </form>
+                    </div>
+
+                    <!-- NỬA PHẢI: MÀN HÌNH XEM TRƯỚC -->
+                    <div class="w-full lg:w-1/2">
+                        <div class="sticky top-6">
+                            <div class="flex border-b border-gray-300 mb-4">
+                                <button class="preview-btn tab-btn active px-4 py-2 text-blue-600 font-bold border-b-2 border-blue-600" data-target="preview_fb">Facebook</button>
+                                <button class="preview-btn tab-btn px-4 py-2 text-gray-500" data-target="preview_ig">Instagram</button>
+                                <button class="preview-btn tab-btn px-4 py-2 text-gray-500" data-target="preview_zalo">Zalo OA</button>
+                            </div>
+
+                            <!-- FACEBOOK PREVIEW -->
+                            <div id="preview_fb" class="tab-content active bg-white border border-gray-300 rounded-xl shadow-sm max-w-[450px] mx-auto overflow-hidden">
+                                <div class="p-3 flex items-center gap-2">
+                                    <div class="w-10 h-10 bg-blue-800 rounded-full flex items-center justify-center text-white font-bold shrink-0">BB</div>
+                                    <div class="leading-tight"><p class="font-bold text-[15px] text-gray-900">Bin Bin Hotel</p><p class="text-[13px] text-gray-500">Vừa xong <span class="text-[8px]">●</span> 🌎</p></div>
+                                </div>
+                                <div class="px-3 pb-2"><p id="fb_text" class="text-[15px] text-gray-900 whitespace-pre-wrap">Nội dung bài viết...</p></div>
+                                <div id="fb_media" class="w-full bg-black min-h-[250px] flex items-center justify-center border-y border-gray-200">
+                                    <span class="text-gray-400 text-sm">Chưa có hình ảnh/video</span>
+                                </div>
+                            </div>
+
+                            <!-- INSTAGRAM PREVIEW -->
+                            <div id="preview_ig" class="tab-content bg-white border border-gray-300 rounded-xl shadow-sm max-w-[450px] mx-auto overflow-hidden pb-2">
+                                <div class="p-3 flex items-center gap-2"><div class="w-8 h-8 bg-gradient-to-tr from-yellow-400 to-fuchsia-600 p-[2px] rounded-full"><div class="w-full h-full bg-white rounded-full flex items-center justify-center text-xs font-bold">BB</div></div><p class="font-semibold text-sm">binbin.hotel</p></div>
+                                <div id="ig_media" class="w-full aspect-square bg-black relative flex items-center justify-center border-y border-gray-800"><span class="text-gray-400">Chưa có file</span></div>
+                                <div class="p-3"><div class="flex gap-4 mb-2 text-2xl font-bold text-gray-800">♡ 💬 ➦</div><p class="text-[14px]"><span class="font-bold mr-2">binbin.hotel</span><span id="ig_text" class="whitespace-pre-wrap">Nội dung...</span></p></div>
+                            </div>
+
+                            <!-- ZALO PREVIEW -->
+                            <div id="preview_zalo" class="tab-content bg-gray-100 border rounded-xl shadow-md max-w-[450px] mx-auto p-4">
+                                <div class="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+                                    <div id="zalo_cover" class="w-full h-48 bg-black flex items-center justify-center"><span class="text-gray-400">Ảnh bìa Article</span></div>
+                                    <div class="p-4"><h3 id="zalo_title" class="font-bold text-lg mb-2 line-clamp-2">Tiêu đề bài viết...</h3><p id="zalo_desc" class="text-gray-500 text-sm line-clamp-3">Mô tả bài viết...</p></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: QUẢN LÝ BÀI VIẾT -->
+            <div id="tab_manage" class="main-tab hidden bg-white p-6 rounded-xl shadow-md">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">📋 Quản Lý & Lịch Sử Bài Đăng</h2>
+                    <button onclick="loadPosts()" class="bg-blue-50 text-blue-600 px-4 py-2 rounded font-semibold hover:bg-blue-100">🔄 Làm mới</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left border-collapse min-w-[800px]">
+                        <thead class="bg-gray-100 text-gray-700">
+                            <tr>
+                                <th class="px-4 py-3 border">Thời gian</th>
+                                <th class="px-4 py-3 border w-1/3">Nội dung</th>
+                                <th class="px-4 py-3 border text-center">Media</th>
+                                <th class="px-4 py-3 border text-center">Tình trạng</th>
+                                <th class="px-4 py-3 border text-center w-[120px]">Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table_body">
+                            <tr><td colspan="5" class="text-center py-4 text-gray-500">Đang tải dữ liệu...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL XEM TRƯỚC TỪ BẢNG -->
+    <div id="modal_preview" class="fixed inset-0 bg-black bg-opacity-70 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto relative shadow-2xl">
+            <div class="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center z-10">
+                <h3 class="font-bold text-lg">👀 Xem trước bài viết</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-red-500 font-bold text-2xl leading-none">&times;</button>
+            </div>
+            <div id="modal_content" class="p-4 bg-gray-100"></div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT XỬ LÝ LÔGIC -->
+    <script>
+        const API_BASE = 'http://localhost:3000/api';
+        let selectedFiles = []; 
+        let globalPostsData = []; 
+
+        // --- HỆ THỐNG ĐĂNG NHẬP ---
+        function checkAuth() {
+            const token = localStorage.getItem('bb_auth_token');
+            if (token) {
+                document.getElementById('login_overlay').classList.add('hidden');
+                document.getElementById('app_wrapper').classList.remove('hidden');
+            } else {
+                document.getElementById('login_overlay').classList.remove('hidden');
+                document.getElementById('app_wrapper').classList.add('hidden');
+            }
+        }
+        checkAuth(); // Kiểm tra ngay khi tải trang
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('admin_password').value;
+            const btn = document.getElementById('btn_login');
+            const status = document.getElementById('login_status');
+            
+            btn.innerText = 'ĐANG KIỂM TRA...'; btn.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    localStorage.setItem('bb_auth_token', data.token);
+                    status.classList.add('hidden');
+                    checkAuth();
+                } else {
+                    status.innerText = data.message; status.classList.remove('hidden');
+                }
+            } catch (error) {
+                status.innerText = 'Lỗi kết nối đến máy chủ!'; status.classList.remove('hidden');
+            } finally { btn.innerText = '🔓 ĐĂNG NHẬP'; btn.disabled = false; }
+        });
+
+        function logout() {
+            localStorage.removeItem('bb_auth_token');
+            checkAuth();
+        }
+
+        // Hàm hỗ trợ đính kèm Token vào API
+        function getHeaders() {
+            return { 'Authorization': `Bearer ${localStorage.getItem('bb_auth_token')}` };
+        }
+
+        // --- CÁC HÀM XỬ LÝ ỨNG DỤNG ---
+        function switchMainTab(tabId, btn) {
+            document.querySelectorAll('.main-tab').forEach(t => t.classList.add('hidden'));
+            document.getElementById(tabId).classList.remove('hidden');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        document.querySelectorAll('.preview-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.preview-btn').forEach(b => { b.classList.remove('active', 'text-blue-600', 'border-b-2', 'border-blue-600'); b.classList.add('text-gray-500'); });
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active', 'text-blue-600', 'border-b-2', 'border-blue-600');
+                btn.classList.remove('text-gray-500');
+                document.getElementById(btn.dataset.target).classList.add('active');
+            });
+        });
+
+        document.getElementById('content').addEventListener('input', function() {
+            const text = this.value || 'Nội dung bài viết...';
+            document.getElementById('fb_text').innerText = text; document.getElementById('ig_text').innerText = text;
+            document.getElementById('zalo_title').innerText = text.split('\n')[0]; document.getElementById('zalo_desc').innerText = text;
+        });
+
+        // NÂNG CẤP MEDIA: Đổi sang object-contain hiển thị 100% tỷ lệ gốc
+        function getMediaTag(url, type) {
+            return type.includes('video') ? `<video src="${url}" class="w-full h-full object-contain bg-black" muted loop autoplay playsinline controls></video>` : `<img src="${url}" class="w-full h-full object-contain bg-black">`;
+        }
+
+        document.getElementById('media_files').addEventListener('change', function(e) {
+            selectedFiles = Array.from(e.target.files);
+            const fbContainer = document.getElementById('fb_media'); const igContainer = document.getElementById('ig_media'); const zaloCover = document.getElementById('zalo_cover');
+            
+            if (selectedFiles.length === 0) return;
+
+            const firstUrl = URL.createObjectURL(selectedFiles[0]);
+            const firstType = selectedFiles[0].type;
+
+            zaloCover.innerHTML = getMediaTag(firstUrl, firstType);
+            igContainer.innerHTML = getMediaTag(firstUrl, firstType) + (selectedFiles.length > 1 ? `<div class="absolute ig-carousel-dots flex gap-1"><div class="w-2 h-2 rounded-full bg-blue-500"></div><div class="w-2 h-2 rounded-full bg-gray-300"></div></div>` : '');
+
+            fbContainer.innerHTML = ''; fbContainer.className = "w-full bg-black grid grid-cols-2 gap-[2px]";
+            selectedFiles.slice(0, 4).forEach((file, index) => {
+                const url = URL.createObjectURL(file);
+                let itemClass = selectedFiles.length === 1 ? "col-span-2 h-[450px]" : (selectedFiles.length === 3 && index === 0 ? "col-span-2 h-56" : "h-40");
+                let tag = getMediaTag(url, file.type);
+                
+                if (index === 3 && selectedFiles.length > 4) tag += `<div class="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center text-white text-2xl font-bold">+${selectedFiles.length - 4}</div>`;
+                fbContainer.innerHTML += `<div class="w-full relative ${itemClass}">${tag}</div>`;
+            });
+        });
+
+        // API ĐĂNG BÀI (Có đính kèm Token)
+        async function submitForm(isDraft) {
+            const btnSubmit = document.getElementById('btn_submit'); const btnDraft = document.getElementById('btn_draft'); const statusMsg = document.getElementById('submit_status');
+            const content = document.getElementById('content').value;
+            const platforms = Array.from(document.querySelectorAll('input[name="platform"]:checked')).map(cb => cb.value);
+            
+            if (platforms.length === 0) return alert('Chọn ít nhất 1 kênh!');
+            btnSubmit.disabled = btnDraft.disabled = true; statusMsg.className = 'text-center mt-2 font-bold text-blue-600';
+
+            try {
+                let mediaUrls = [];
+                if (selectedFiles.length > 0) {
+                    statusMsg.innerText = '⏳ Đang tải file lên mây...';
+                    const formData = new FormData(); selectedFiles.forEach(file => formData.append('mediaFiles', file));
+                    
+                    const uploadRes = await fetch(`${API_BASE}/upload`, { 
+                        method: 'POST', 
+                        headers: getHeaders(), // THÊM TOKEN
+                        body: formData 
+                    });
+                    const uploadData = await uploadRes.json();
+                    if (!uploadData.success) throw new Error(uploadData.message);
+                    mediaUrls = uploadData.urls; 
+                }
+
+                statusMsg.innerText = isDraft ? '⏳ Đang lưu bản nháp...' : '⏳ Đang cấu hình bài viết...';
+                
+                const publishRes = await fetch(`${API_BASE}/publish`, {
+                    method: 'POST', 
+                    headers: { ...getHeaders(), 'Content-Type': 'application/json' }, // THÊM TOKEN
+                    body: JSON.stringify({ content, mediaUrls, platforms, isPostNow: true, scheduledTime: null, isDraft })
+                });
+                
+                const publishData = await publishRes.json();
+                if (publishData.success) {
+                    statusMsg.className = 'text-center mt-2 font-bold text-green-600';
+                    statusMsg.innerText = '✅ ' + (isDraft ? 'Đã lưu bản nháp!' : 'Đã đưa vào hàng đợi!');
+                    setTimeout(() => window.location.reload(), 2000);
+                } else throw new Error(publishData.message);
+            } catch (error) {
+                statusMsg.className = 'text-center mt-2 font-bold text-red-600'; statusMsg.innerText = '❌ Lỗi: ' + error.message;
+            } finally { btnSubmit.disabled = btnDraft.disabled = false; }
+        }
+
+        document.getElementById('postForm').addEventListener('submit', (e) => { e.preventDefault(); submitForm(false); });
+        document.getElementById('btn_draft').addEventListener('click', () => { if (document.getElementById('content').value) submitForm(true); else alert('Nhập nội dung trước khi lưu!'); });
+
+        // API BẢNG QUẢN LÝ (Có đính kèm Token)
+        function getBadge(status, platform) {
+            if (!status) return '';
+            let color = status === 'draft' ? 'bg-gray-200 text-gray-700' : (status === 'pending' ? 'bg-blue-100 text-blue-700' : (status === 'processing' ? 'bg-yellow-100 text-yellow-700' : (status === 'published' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700')));
+            let label = status === 'draft' ? 'Nháp' : (status === 'pending' ? 'Chờ' : (status === 'processing' ? 'Đang đăng' : (status === 'published' ? 'Xong' : 'Lỗi')));
+            return `<div class="text-xs ${color} px-2 py-1 rounded mb-1 font-semibold text-center">${platform.toUpperCase()}: ${label}</div>`;
+        }
+
+        async function loadPosts() {
+            const tbody = document.getElementById('table_body');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Đang tải dữ liệu...</td></tr>';
+            try {
+                const res = await fetch(`${API_BASE}/posts`, { headers: getHeaders() });
+                const data = await res.json();
+                if (data.success && data.posts.length > 0) {
+                    globalPostsData = data.posts;
+                    tbody.innerHTML = data.posts.map(p => {
+                        const hasDraft = (p.status_facebook === 'draft' || p.status_instagram === 'draft' || p.status_zalo === 'draft');
+                        return `
+                        <tr class="border-b hover:bg-gray-50 transition">
+                            <td class="px-4 py-3 text-xs text-gray-500">${new Date(p.created_at).toLocaleString('vi-VN')}</td>
+                            <td class="px-4 py-3"><div class="line-clamp-2 text-gray-800">${p.content || ''}</div></td>
+                            <td class="px-4 py-3 text-center font-bold text-blue-600">${p.media_urls ? p.media_urls.length : 0} file</td>
+                            <td class="px-4 py-3">${getBadge(p.status_facebook, 'fb')}${getBadge(p.status_instagram, 'ig')}${getBadge(p.status_zalo, 'zalo')}</td>
+                            <td class="px-4 py-3 text-center align-middle">
+                                <div class="flex flex-col gap-1.5">
+                                    <button onclick="openModal('${p.id}')" class="text-white bg-blue-500 hover:bg-blue-600 px-3 py-1 rounded text-xs w-full">👁️ Xem</button>
+                                    ${hasDraft ? `<button onclick="publishPost('${p.id}')" class="text-white bg-green-500 hover:bg-green-600 px-3 py-1 rounded text-xs w-full">🚀 Đăng</button>` : ''}
+                                    <button onclick="deletePost('${p.id}')" class="text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-xs w-full">🗑️ Xóa</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `}).join('');
+                } else tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Chưa có bài viết nào.</td></tr>';
+            } catch (error) { tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-red-500">Lỗi tải dữ liệu hoặc chưa đăng nhập!</td></tr>'; }
+        }
+
+        async function deletePost(id) {
+            if(!confirm('Xóa bài viết này?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/posts/${id}`, { method: 'DELETE', headers: getHeaders() });
+                const data = await res.json();
+                if(data.success) { loadPosts(); } else alert('❌ Lỗi: ' + data.message);
+            } catch(e) { alert('❌ Lỗi kết nối!'); }
+        }
+
+        async function publishPost(id) {
+            if(!confirm('Đẩy bản nháp này lên hàng đợi đăng bài?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/posts/${id}/publish`, { method: 'PUT', headers: getHeaders() });
+                const data = await res.json();
+                if(data.success) { loadPosts(); } else alert('❌ Lỗi: ' + data.message);
+            } catch(e) { alert('❌ Lỗi kết nối!'); }
+        }
+
+        function openModal(id) {
+            const post = globalPostsData.find(p => p.id === id);
+            if(!post) return;
+            
+            let mediaHtml = '<span class="text-gray-400">Không có đính kèm</span>';
+            if(post.media_urls && post.media_urls.length > 0) {
+                mediaHtml = `<div class="w-full bg-black grid grid-cols-2 gap-[2px]">`;
+                post.media_urls.slice(0, 4).forEach((url, index) => {
+                    let itemClass = post.media_urls.length === 1 ? "col-span-2 h-[350px]" : (post.media_urls.length === 3 && index === 0 ? "col-span-2 h-48" : "h-32");
+                    let tag = url.includes('.mp4') ? `<video src="${url}" class="w-full h-full object-contain bg-black" controls></video>` : `<img src="${url}" class="w-full h-full object-contain bg-black">`;
+                    if (index === 3 && post.media_urls.length > 4) tag += `<div class="absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center text-white text-2xl font-bold">+${post.media_urls.length - 4}</div>`;
+                    mediaHtml += `<div class="w-full relative bg-black ${itemClass}">${tag}</div>`;
+                });
+                mediaHtml += `</div>`;
+            }
+
+            document.getElementById('modal_content').innerHTML = `
+                <div class="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm mx-auto max-w-[450px]">
+                    <div class="p-3 flex items-center gap-2"><div class="w-10 h-10 bg-blue-800 rounded-full flex items-center justify-center text-white font-bold shrink-0">BB</div><div class="leading-tight"><p class="font-bold text-[15px] text-gray-900">Bin Bin Hotel</p><p class="text-[13px] text-gray-500">${new Date(post.created_at).toLocaleString('vi-VN')}</p></div></div>
+                    <div class="px-3 pb-2"><p class="text-[15px] text-gray-900 whitespace-pre-wrap">${post.content || ''}</p></div>
+                    <div class="w-full bg-gray-100 flex items-center justify-center border-y border-gray-200">${mediaHtml}</div>
+                </div>`;
+            document.getElementById('modal_preview').classList.remove('hidden');
+        }
+        function closeModal() { document.getElementById('modal_preview').classList.add('hidden'); }
+    </script>
+</body>
+</html>
