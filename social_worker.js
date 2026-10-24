@@ -302,7 +302,7 @@ async function processAllSocialPosts() {
                     } catch (err) {
                         console.error('Lỗi dọn rác:', err);
                     }
-                }, 60000); // Đổi 15000 thành 60000 tại đây
+                }, 3600000); // Đổi 15000 thành 60000 tại đây
             }
         }
     }

@@ -10,7 +10,10 @@ import { processAllSocialPosts } from './social_worker.js';
 
 const app = express();
 app.use(cors()); 
-app.use(express.json()); 
+
+// CẤU HÌNH MỞ RỘNG BĂNG THÔNG CHO FILE VIDEO LỚN
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 // Cấu hình phễu hứng file vào bộ nhớ đệm (RAM) trước khi đẩy lên Supabase
 const upload = multer({ storage: multer.memoryStorage() });
@@ -38,6 +41,12 @@ const requireAuth = (req, res, next) => {
         res.status(401).json({ success: false, message: 'Từ chối truy cập. Vui lòng đăng nhập lại!' });
     }
 };
+// ==========================================
+// CỬA PHỤ: GIỮ MÁY CHỦ THỨC 24/7 (KEEP-ALIVE)
+// ==========================================
+app.get('/api/keep-alive', (req, res) => {
+    res.status(200).send('Máy chủ đang thức để canh lịch đăng bài!');
+});
 
 // API Đăng nhập: Cấp Token nếu nhập đúng mật khẩu
 app.post('/api/login', (req, res) => {
