@@ -60,7 +60,8 @@ async function publishToZalo(post, zaloTokenRow, isRetry = false) {
                 "photo_url": coverUrl, 
                 "status": "show"
             },
-            "description": post.content,
+            // Đã vá lỗi giới hạn 300 ký tự của Zalo
+            "description": post.content.length > 290 ? post.content.substring(0, 290) + "..." : post.content,
             "body": [
                 {
                     "type": "text",
