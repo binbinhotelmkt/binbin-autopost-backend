@@ -173,10 +173,9 @@ async function publishToFacebook(post, pageId, pageToken) {
         if (post.media_urls && post.media_urls.length > 0) {
             if (post.media_urls.length === 1) {
                 payload.url = post.media_urls[0];
-                payload.published = true; // Ép Facebook xuất bản công khai
                 const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, payload);
                 console.log(`[Facebook] ✅ Đăng 1 ảnh thành công! Post ID: ${res.data.post_id || res.data.id}`);
-                return res.data.post_id || res.data.id;
+                return true;
             } else {
                 console.log(`[Facebook] - Đang tải ngầm ${post.media_urls.length} ảnh...`);
                 let attached_media = [];
@@ -191,7 +190,7 @@ async function publishToFacebook(post, pageId, pageToken) {
         }
         const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/feed`, payload);
         console.log(`[Facebook] ✅ Đăng thành công! Post ID: ${res.data.id}`);
-        return res.data.id;
+        return true;
     } catch (error) {
         console.error(`[Facebook] ❌ Lỗi:`, error.response?.data?.error?.message || error.message);
         return false;
