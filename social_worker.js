@@ -163,7 +163,7 @@ async function publishToFacebook(post, pageId, pageToken) {
                 payload.url = post.media_urls[0];
                 const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, payload);
                 console.log(`[Facebook] ✅ Đăng 1 ảnh thành công! Post ID: ${res.data.post_id || res.data.id}`);
-                return true;
+                return res.data.post_id || res.data.id; // Đã sửa lỗi return true
             } else {
                 console.log(`[Facebook] - Đang tải ngầm ${post.media_urls.length} ảnh...`);
                 let attached_media = [];
@@ -265,19 +265,18 @@ async function processAllSocialPosts() {
 
             if (isAllChannelsFinished && post.media_urls && post.media_urls.length > 0) {
                 try {
-                    // Tách tên file từ đường link đầy đủ. Chú ý: Đổi chữ 'binbin_media' thành đúng tên bucket Supabase của anh.
+                    // Đã đổi đúng tên kho chứa thành 'social_media' giống trong server.js
                     const filePaths = post.media_urls.map(url => {
-                        const parts = url.split('/binbin_media/'); 
+                        const parts = url.split('/social_media/'); 
                         return parts[1];
                     });
 
                     // Xóa vĩnh viễn file trên Storage
                     const { error: removeError } = await supabase.storage
-                        .from('binbin_media') // Đổi tên bucket tại đây
+                        .from('social_media') // Đã sửa thành social_media
                         .remove(filePaths);
 
                     if (!removeError) {
-                        // Xóa đường dẫn file trong bảng dữ liệu để giao diện biết là đã dọn dẹp
                         await supabase.from('social_posts').update({ media_urls: null }).eq('id', post.id);
                         console.log(`🧹 Dọn rác thành công: Đã xóa ${filePaths.length} file đính kèm để tiết kiệm dung lượng.`);
                     }
