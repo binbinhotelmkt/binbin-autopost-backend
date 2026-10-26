@@ -5,18 +5,14 @@ import cors from 'cors';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 import cron from 'node-cron';
-import multer from 'multer';
 import { processAllSocialPosts } from './social_worker.js';
 
 const app = express();
 app.use(cors()); 
 
-// CẤU HÌNH MỞ RỘNG BĂNG THÔNG CHO FILE VIDEO LỚN
+// CẤU HÌNH MỞ RỘNG BĂNG THÔNG
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ limit: '500mb', extended: true }));
-
-// Cho phép lưu file tạm vào ổ cứng để chống tràn RAM
-const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
 // 1. CẤU HÌNH API KEYS

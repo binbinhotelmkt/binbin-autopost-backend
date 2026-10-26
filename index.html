@@ -332,17 +332,21 @@
             try {
                 let mediaUrls = [];
                 if (selectedFiles.length > 0) {
-                    // 1. Xin chìa khóa trực tiếp vào Supabase từ Backend
+                    statusMsg.innerText = `⏳ Đang kết nối máy chủ đám mây...`;
+                    
+                    // 1. Xin chìa khóa với lớp bảo vệ bắt lỗi HTML
                     const configRes = await fetch(`${API_BASE}/config`, { headers: getHeaders() });
+                    if (!configRes.ok) throw new Error('Máy chủ Backend đang khởi động lại hoặc bị lỗi. Vui lòng đợi 1 phút rồi thử lại!');
+                    
                     const config = await configRes.json();
                     if (!config.success) throw new Error('Không lấy được cấu hình mây!');
 
-                    // 2. Bơm thẳng file từ Trình duyệt lên Supabase (Bỏ qua Render)
+                    // 2. Bơm thẳng file từ Trình duyệt lên Supabase
                     for (const file of selectedFiles) {
                         const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
                         const supabaseUploadUrl = `${config.supabaseUrl}/storage/v1/object/social_media/${fileName}`;
                         
-                        statusMsg.innerText = `⏳ Đang bơm thẳng lên mây: ${file.name}...`;
+                        statusMsg.innerText = `⏳ Đang bơm Video lên mây: ${file.name}... (Vui lòng không tắt trang)`;
                         
                         const uploadRes = await fetch(supabaseUploadUrl, {
                             method: 'POST',
