@@ -6,7 +6,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 import cron from 'node-cron';
 import multer from 'multer';
-import { processAllSocialPosts } from './social_worker.js'; 
+import { processAllSocialPosts } from './social_worker.js';
 
 const app = express();
 app.use(cors()); 
@@ -15,7 +15,7 @@ app.use(cors());
 app.use(express.json({ limit: '500mb' }));
 app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
-// Cấu hình phễu hứng file vào bộ nhớ đệm (RAM) trước khi đẩy lên Supabase
+// Cho phép lưu file tạm vào ổ cứng để chống tràn RAM
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
@@ -75,45 +75,6 @@ app.post('/api/generate-content', requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// API 2: UPLOAD FILE (ẢNH/VIDEO) LÊN SUPABASE
-// ==========================================
-// Cho phép upload tối đa 10 file cùng lúc
-app.post('/api/upload', requireAuth, upload.array('mediaFiles', 10), async (req, res) => {
-    try {
-        if (!req.files || req.files.length === 0) {
-            return res.json({ success: true, urls: [] }); // Không có file cũng không sao
-        }
-
-        const uploadedUrls = [];
-        console.log(`[Upload] 📤 Đang xử lý tải lên ${req.files.length} file...`);
-
-        for (const file of req.files) {
-            // Đổi tên file để không bị trùng (Thêm timestamp + xóa khoảng trắng)
-            const fileName = `${Date.now()}_${file.originalname.replace(/\s+/g, '_')}`;
-            
-            // Đẩy trực tiếp file lên bucket 'social_media' của Supabase
-            const { data, error } = await supabase.storage
-                .from('social_media')
-                .upload(fileName, file.buffer, {
-                    contentType: file.mimetype,
-                });
-
-            if (error) throw error;
-
-            // Lấy đường link công khai của file vừa tải lên
-            const { data: publicData } = supabase.storage.from('social_media').getPublicUrl(fileName);
-            uploadedUrls.push(publicData.publicUrl);
-        }
-
-        console.log(`[Upload] ✅ Đã tải xong! Links:`, uploadedUrls);
-        res.json({ success: true, urls: uploadedUrls });
-    } catch (error) {
-        console.error("[Upload] ❌ Lỗi tải file:", error);
-        res.status(500).json({ success: false, message: "Lỗi lưu trữ file" });
-    }
-});
-
-// ==========================================
 // API 3: TẠO BÀI VIẾT HOẶC LƯU NHÁP
 // ==========================================
 app.post('/api/publish', requireAuth, async (req, res) => {
@@ -139,6 +100,17 @@ app.post('/api/publish', requireAuth, async (req, res) => {
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
+});
+
+// ==========================================
+// API MỚI: CẤP CHÌA KHÓA SUPABASE CHO FRONTEND
+// ==========================================
+app.get('/api/config', requireAuth, (req, res) => {
+    res.json({
+        success: true,
+        supabaseUrl: process.env.SUPABASE_URL,
+        supabaseKey: process.env.SUPABASE_KEY
+    });
 });
 
 // ==========================================

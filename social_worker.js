@@ -172,11 +172,26 @@ async function publishToFacebook(post, pageId, pageToken) {
 
         if (post.media_urls && post.media_urls.length > 0) {
             if (post.media_urls.length === 1) {
-                // CHIẾN THUẬT 1: Nếu chỉ có 1 ảnh, đăng thẳng đứng ra tường (Tỷ lệ hiển thị 100%)
-                payload.url = post.media_urls[0];
-                payload.published = true;
-                const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, payload);
-                console.log(`[Facebook] ✅ Đăng 1 ảnh thành công! Post ID: ${res.data.post_id || res.data.id}`);
+                const mediaUrl = post.media_urls[0];
+                const isVideo = mediaUrl.toLowerCase().includes('.mp4') || mediaUrl.toLowerCase().includes('.mov');
+                
+                // Nếu là Video thì đẩy qua cổng /videos, nếu là Ảnh thì đẩy qua cổng /photos
+                const endpoint = isVideo ? 'videos' : 'photos';
+                let fbPayload = { access_token: pageToken, published: true };
+
+                if (isVideo) {
+                    fbPayload.file_url = mediaUrl; // Meta yêu cầu dùng chữ file_url cho video
+                    fbPayload.description = post.content;
+                } else {
+                    fbPayload.url = mediaUrl;
+                    fbPayload.message = post.content;
+                    if (post.attached_link) fbPayload.link = post.attached_link;
+                }
+
+                console.log(`[Facebook] - Đang xuất bản 1 ${isVideo ? 'Video' : 'Ảnh'} thẳng ra tường...`);
+                const res = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/${endpoint}`, fbPayload);
+                
+                console.log(`[Facebook] ✅ Đăng thành công! Post ID: ${res.data.post_id || res.data.id}`);
                 return res.data.post_id || res.data.id;
             } else {
                 // CHIẾN THUẬT 2: Nếu có nhiều ảnh, tải ngầm rồi gom thành Album

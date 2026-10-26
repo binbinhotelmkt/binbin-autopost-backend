@@ -332,12 +332,32 @@
             try {
                 let mediaUrls = [];
                 if (selectedFiles.length > 0) {
-                    statusMsg.innerText = '⏳ Đang tải file lên mây...';
-                    const formData = new FormData(); selectedFiles.forEach(file => formData.append('mediaFiles', file));
-                    const uploadRes = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: getHeaders(), body: formData });
-                    const uploadData = await uploadRes.json();
-                    if (!uploadData.success) throw new Error(uploadData.message);
-                    mediaUrls = uploadData.urls; 
+                    // 1. Xin chìa khóa trực tiếp vào Supabase từ Backend
+                    const configRes = await fetch(`${API_BASE}/config`, { headers: getHeaders() });
+                    const config = await configRes.json();
+                    if (!config.success) throw new Error('Không lấy được cấu hình mây!');
+
+                    // 2. Bơm thẳng file từ Trình duyệt lên Supabase (Bỏ qua Render)
+                    for (const file of selectedFiles) {
+                        const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+                        const supabaseUploadUrl = `${config.supabaseUrl}/storage/v1/object/social_media/${fileName}`;
+                        
+                        statusMsg.innerText = `⏳ Đang bơm thẳng lên mây: ${file.name}...`;
+                        
+                        const uploadRes = await fetch(supabaseUploadUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${config.supabaseKey}`,
+                                'apikey': config.supabaseKey,
+                                'Content-Type': file.type
+                            },
+                            body: file
+                        });
+
+                        if (!uploadRes.ok) throw new Error(`Lỗi tải file ${file.name}`);
+                        
+                        mediaUrls.push(`${config.supabaseUrl}/storage/v1/object/public/social_media/${fileName}`);
+                    }
                 }
 
                 statusMsg.innerText = isDraft ? '⏳ Đang lưu bản nháp...' : '⏳ Đang cấu hình bài viết...';
