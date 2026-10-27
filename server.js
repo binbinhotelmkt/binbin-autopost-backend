@@ -8,6 +8,7 @@ import cron from 'node-cron';
 import { processAllSocialPosts } from './social_worker.js';
 
 const app = express();
+app.use(express.json());
 app.use(cors()); 
 
 // CẤU HÌNH MỞ RỘNG BĂNG THÔNG
@@ -258,22 +259,29 @@ app.get('/webhook/facebook', (req, res) => {
 
 // 2. CỔNG POST: Nơi nhận tin nhắn thực tế từ khách hàng
 app.post('/webhook/facebook', (req, res) => {
+    console.log("🔥 [WEBHOOK] Meta vừa gõ cửa!");
+    console.log("Dữ liệu thô Meta gửi sang:", JSON.stringify(req.body, null, 2));
+
     const body = req.body;
 
-    if (body.object === 'page') {
+    // Kiểm tra xem dữ liệu có đúng chuẩn của Page không
+    if (body && body.object === 'page') {
         body.entry.forEach(function(entry) {
-            // Trích xuất tin nhắn của khách
-            const webhookEvent = entry.messaging[0];
-            const senderId = webhookEvent.sender.id;
-            
-            if (webhookEvent.message && webhookEvent.message.text) {
-                console.log(`📬 [Messenger] Khách ID ${senderId} vừa nhắn: "${webhookEvent.message.text}"`);
+            // Lọc ra các sự kiện tin nhắn
+            if (entry.messaging) {
+                const webhookEvent = entry.messaging[0];
+                const senderId = webhookEvent.sender?.id;
+                
+                if (webhookEvent.message && webhookEvent.message.text) {
+                    console.log(`📬 [Messenger] Khách ID ${senderId} vừa nhắn: "${webhookEvent.message.text}"`);
+                }
             }
         });
         
-        // Bắt buộc phải trả lời 200 OK ngay lập tức để Meta không gửi lại tin cũ
+        // Trả lời 200 OK ngay lập tức
         res.status(200).send('EVENT_RECEIVED');
     } else {
+        // Nếu không phải dữ liệu page, trả về 404
         res.sendStatus(404);
     }
 });
