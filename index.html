@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bin Bin Hotel - Hệ Thống Đăng Bài</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Nhúng thư viện SDK chính thức của Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         .tab-content { display: none; }
         .tab-content.active { display: block; }
@@ -334,31 +336,33 @@
                 if (selectedFiles.length > 0) {
                     statusMsg.innerText = `⏳ Đang kết nối máy chủ đám mây...`;
                     
-                    // 1. Xin chìa khóa với lớp bảo vệ bắt lỗi HTML
                     const configRes = await fetch(`${API_BASE}/config`, { headers: getHeaders() });
-                    if (!configRes.ok) throw new Error('Máy chủ Backend đang khởi động lại hoặc bị lỗi. Vui lòng đợi 1 phút rồi thử lại!');
-                    
+                    if (!configRes.ok) throw new Error('Máy chủ Backend đang khởi động lại hoặc bị lỗi!');
                     const config = await configRes.json();
                     if (!config.success) throw new Error('Không lấy được cấu hình mây!');
 
-                    // 2. Bơm thẳng file từ Trình duyệt lên Supabase
-                    for (const file of selectedFiles) {
-                        const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-                        const supabaseUploadUrl = `${config.supabaseUrl}/storage/v1/object/social_media/${fileName}`;
-                        
-                        statusMsg.innerText = `⏳ Đang bơm Video lên mây: ${file.name}... (Vui lòng không tắt trang)`;
-                        
-                        const uploadRes = await fetch(supabaseUploadUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${config.supabaseKey}`,
-                                'apikey': config.supabaseKey,
-                                'Content-Type': file.type
-                            },
-                            body: file
-                        });
+                    // KHỞI TẠO CÔNG NHÂN SUPABASE TỪ THƯ VIỆN SDK
+                    const supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
 
-                        if (!uploadRes.ok) throw new Error(`Lỗi tải file ${file.name}`);
+                    for (const file of selectedFiles) {
+                        // Khử dấu tiếng Việt và ký tự lạ (Cực kỳ quan trọng)
+                        const safeName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9.-]/g, "_");
+                        const fileName = `${Date.now()}_${safeName}`;
+                        
+                        statusMsg.innerText = `⏳ Đang dùng SDK bơm Video lên mây: ${file.name}...`;
+                        
+                        // SỬ DỤNG SDK ĐỂ UPLOAD (Tự động chia nhỏ file, chống mọi lỗi 400)
+                        const { data, error } = await supabaseClient.storage
+                            .from('social_media')
+                            .upload(fileName, file, {
+                                cacheControl: '3600',
+                                upsert: true // Bật cờ cho phép ghi đè nếu trùng tên
+                            });
+
+                        if (error) {
+                            console.error("Lỗi Supabase chi tiết:", error);
+                            throw new Error(`Lỗi tải lên: ${error.message}`);
+                        }
                         
                         mediaUrls.push(`${config.supabaseUrl}/storage/v1/object/public/social_media/${fileName}`);
                     }

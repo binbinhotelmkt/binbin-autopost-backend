@@ -50,16 +50,15 @@ async function publishToZalo(post, zaloTokenRow, isRetry = false) {
         console.log(`[Zalo] - Đang xuất bản Article bằng link ảnh trực tiếp (Bản gốc)...`);
         const coverUrl = post.media_urls[0];
 
-        // 1. Tách bài viết thành mảng các dòng
-        const lines = post.content.split('\n');
+        // 1. Tách bài viết thành các dòng (tự động bỏ qua các dòng trống)
+        const lines = post.content.split('\n').filter(line => line.trim() !== '');
         
-        // 2. Bốc tách dòng đầu tiên làm Tiêu đề
-        let titleLine = lines[0].trim();
-        // Zalo giới hạn tiêu đề tối đa 150 ký tự, nên ta cắt an toàn ở mức 140
+        // 2. Bốc tách Tiêu đề (Dòng đầu tiên, bảo vệ tối đa 140 ký tự)
+        let titleLine = lines.length > 0 ? lines[0].trim() : "Thông báo từ Bin Bin Hotel";
         if (titleLine.length > 140) titleLine = titleLine.substring(0, 140) + "...";
 
-        // 3. Gộp toàn bộ các dòng phía dưới lại làm Nội dung (Body)
-        const bodyContent = lines.slice(1).join('\n').trim();
+        // 3. Nội dung Body (Các dòng dưới, nếu chỉ có 1 dòng thì lấy luôn titleLine)
+        let bodyContent = lines.length > 1 ? lines.slice(1).join('\n').trim() : titleLine;
 
         // 4. Đóng gói chuẩn gửi cho Zalo
         const payload = {
@@ -71,8 +70,8 @@ async function publishToZalo(post, zaloTokenRow, isRetry = false) {
                 "photo_url": coverUrl, 
                 "status": "show"
             },
-            // Mô tả bên ngoài tự động cắt lấy 290 chữ của phần nội dung
-            "description": bodyContent.length > 290 ? bodyContent.substring(0, 290) + "..." : bodyContent,
+            // BẢN VÁ: Đảm bảo mô tả luôn có chữ (từ 1 - 290 ký tự)
+            "description": bodyContent.substring(0, 290) || "Cập nhật mới từ Bin Bin Hotel",
             "body": [
                 {
                     "type": "text",
@@ -122,11 +121,26 @@ async function publishToInstagram(post, igAccountId, pageToken) {
         let creationId;
 
         if (post.media_urls.length === 1) {
-            console.log(`[Instagram] - Đang tạo vùng chứa 1 ảnh...`);
-            const containerRes = await axios.post(`https://graph.facebook.com/v19.0/${igAccountId}/media`, null, {
-                params: { image_url: post.media_urls[0], caption: post.content, access_token: pageToken }
-            });
+            const mediaUrl = post.media_urls[0];
+            const isVideo = mediaUrl.toLowerCase().includes('.mp4') || mediaUrl.toLowerCase().includes('.mov');
+            
+            console.log(`[Instagram] - Đang tạo vùng chứa 1 ${isVideo ? 'Video' : 'Ảnh'}...`);
+            
+            let params = { caption: post.content, access_token: pageToken };
+            if (isVideo) {
+                params.media_type = 'VIDEO';
+                params.video_url = mediaUrl; // IG yêu cầu dùng video_url cho file mp4
+            } else {
+                params.image_url = mediaUrl; // Dùng image_url cho file ảnh
+            }
+
+            const containerRes = await axios.post(`https://graph.facebook.com/v19.0/${igAccountId}/media`, null, { params });
             creationId = containerRes.data.id;
+            
+            // TẠM DỪNG THÔNG MINH: Ảnh chờ 5 giây, Video nặng chờ 30 giây để IG xử lý HD
+            const waitTime = isVideo ? 30000 : 5000;
+            console.log(`[Instagram] - Chờ Meta đóng gói ${isVideo ? 'Video (30s)' : 'Ảnh (5s)'}...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
         } else {
             console.log(`[Instagram] - Đang tách lớp tải ngầm ${post.media_urls.length} ảnh (Carousel)...`);
             const childrenIds = [];
