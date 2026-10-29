@@ -259,29 +259,32 @@ app.get('/webhook/facebook', (req, res) => {
 
 // 2. CỔNG POST: Nơi nhận tin nhắn thực tế từ khách hàng
 app.post('/webhook/facebook', (req, res) => {
-    console.log("🔥 [WEBHOOK] Meta vừa gõ cửa!");
-    console.log("Dữ liệu thô Meta gửi sang:", JSON.stringify(req.body, null, 2));
-
     const body = req.body;
 
-    // Kiểm tra xem dữ liệu có đúng chuẩn của Page không
     if (body && body.object === 'page') {
         body.entry.forEach(function(entry) {
-            // Lọc ra các sự kiện tin nhắn
+            
+            // LUỒNG 1: Nhận tin nhắn KHI ANH LÀ PRIMARY RECEIVER (Sau này dùng)
             if (entry.messaging) {
                 const webhookEvent = entry.messaging[0];
                 const senderId = webhookEvent.sender?.id;
-                
                 if (webhookEvent.message && webhookEvent.message.text) {
-                    console.log(`📬 [Messenger] Khách ID ${senderId} vừa nhắn: "${webhookEvent.message.text}"`);
+                    console.log(`📬 [CHÍNH THỨC] Khách ${senderId} nhắn: "${webhookEvent.message.text}"`);
+                }
+            }
+
+            // LUỒNG 2: Nhận bản Copy KHI PANCAKE ĐANG LÀ PRIMARY (Dùng ngay bây giờ)
+            if (entry.standby) {
+                const standbyEvent = entry.standby[0];
+                const senderId = standbyEvent.sender?.id;
+                if (standbyEvent.message && standbyEvent.message.text) {
+                    console.log(`🕵️ [ĐỌC TRỘM - STANDBY] Khách ${senderId} nhắn: "${standbyEvent.message.text}"`);
                 }
             }
         });
         
-        // Trả lời 200 OK ngay lập tức
         res.status(200).send('EVENT_RECEIVED');
     } else {
-        // Nếu không phải dữ liệu page, trả về 404
         res.sendStatus(404);
     }
 });
