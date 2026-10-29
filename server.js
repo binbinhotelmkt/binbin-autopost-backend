@@ -236,49 +236,100 @@ app.get('/api/google-locations', requireAuth, async (req, res) => {
 });
 
 // ==========================================
-// HỆ THỐNG OMNICHANNEL: WEBHOOK FACEBOOK & INSTAGRAM
+// HỆ THỐNG OMNICHANNEL: WEBHOOK & DATABASE
 // ==========================================
-// Mật mã tự tạo để Meta xác nhận đúng là máy chủ của Bin Bin Hotel
 const FB_VERIFY_TOKEN = 'BinBinHotel_2026'; 
 
-// 1. CỔNG GET: Dùng để Meta kiểm tra (Verify) máy chủ lúc cài đặt
-app.get('/webhook/facebook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
+// HÀM XỬ LÝ: Tự động phân loại và lưu tin nhắn vào Supabase
+async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
+    try {
+        let conversationId;
 
-    if (mode && token) {
-        if (mode === 'subscribe' && token === FB_VERIFY_TOKEN) {
-            console.log('✅ [Meta] Đã xác minh Webhook thành công!');
-            res.status(200).send(challenge);
+        // 1. Tìm xem khách này đã từng chat chưa
+        const { data: existingConv } = await supabase
+            .from('chat_conversations')
+            .select('id')
+            .eq('customer_id', senderId)
+            .eq('platform', platform)
+            .single();
+
+        if (!existingConv) {
+            // KHÁCH MỚI: Tạo một hàng mới trong cột Danh sách Hội thoại
+            const { data: newConv, error: insertError } = await supabase
+                .from('chat_conversations')
+                .insert([{ 
+                    customer_id: senderId, 
+                    platform: platform,
+                    last_message: text,
+                    is_read: false
+                }])
+                .select('id')
+                .single();
+            
+            if (insertError) throw insertError;
+            conversationId = newConv.id;
         } else {
-            res.sendStatus(403);
+            // KHÁCH CŨ: Cập nhật lại câu chat cuối cùng và đẩy lên đầu danh sách
+            conversationId = existingConv.id;
+            await supabase
+                .from('chat_conversations')
+                .update({ 
+                    last_message: text, 
+                    is_read: false,
+                    updated_at: new Date()
+                })
+                .eq('id', conversationId);
         }
+
+        // 2. Lưu chi tiết câu chat vào khung bên phải
+        await supabase
+            .from('chat_messages')
+            .insert([{
+                conversation_id: conversationId,
+                sender_type: 'customer',
+                message_text: text
+            }]);
+
+        console.log(`💾 Đã lưu thành công tin nhắn của ${senderId} vào Database!`);
+    } catch (err) {
+        console.error("❌ Lỗi lưu tin nhắn vào DB:", err.message);
+    }
+}
+
+// CỔNG GET: Meta kiểm tra máy chủ
+app.get('/webhook/facebook', (req, res) => {
+    if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === FB_VERIFY_TOKEN) {
+        res.status(200).send(req.query['hub.challenge']);
+    } else {
+        res.sendStatus(403);
     }
 });
 
-// 2. CỔNG POST: Nơi nhận tin nhắn thực tế từ khách hàng
+// CỔNG POST: Nhận tin nhắn thực tế
 app.post('/webhook/facebook', (req, res) => {
     const body = req.body;
 
     if (body && body.object === 'page') {
         body.entry.forEach(function(entry) {
-            
-            // LUỒNG 1: Nhận tin nhắn KHI ANH LÀ PRIMARY RECEIVER (Sau này dùng)
+            // LUỒNG 1: Nhận chính (Sau này dùng)
             if (entry.messaging) {
                 const webhookEvent = entry.messaging[0];
                 const senderId = webhookEvent.sender?.id;
-                if (webhookEvent.message && webhookEvent.message.text) {
-                    console.log(`📬 [CHÍNH THỨC] Khách ${senderId} nhắn: "${webhookEvent.message.text}"`);
+                const text = webhookEvent.message?.text;
+                if (text) {
+                    console.log(`📬 [CHÍNH THỨC] Khách ${senderId} nhắn: "${text}"`);
+                    saveMessageToSupabase(senderId, text, 'facebook');
                 }
             }
 
-            // LUỒNG 2: Nhận bản Copy KHI PANCAKE ĐANG LÀ PRIMARY (Dùng ngay bây giờ)
+            // LUỒNG 2: Nghe lén (Pancake đang nhận chính)
             if (entry.standby) {
                 const standbyEvent = entry.standby[0];
                 const senderId = standbyEvent.sender?.id;
-                if (standbyEvent.message && standbyEvent.message.text) {
-                    console.log(`🕵️ [ĐỌC TRỘM - STANDBY] Khách ${senderId} nhắn: "${standbyEvent.message.text}"`);
+                const text = standbyEvent.message?.text;
+                if (text) {
+                    console.log(`🕵️ [ĐỌC TRỘM - STANDBY] Khách ${senderId} nhắn: "${text}"`);
+                    saveMessageToSupabase(senderId, text, 'facebook');
                 }
             }
         });
