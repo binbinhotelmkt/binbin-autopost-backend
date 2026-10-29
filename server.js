@@ -6,6 +6,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 import cron from 'node-cron';
 import { processAllSocialPosts } from './social_worker.js';
+import axios from 'axios';
 
 const app = express();
 app.use(express.json());
@@ -240,7 +241,7 @@ app.get('/api/google-locations', requireAuth, async (req, res) => {
 // ==========================================
 const FB_VERIFY_TOKEN = 'BinBinHotel_2026'; 
 
-// HÀM XỬ LÝ: Tự động phân loại và lưu tin nhắn vào Supabase
+// HÀM XỬ LÝ: Tự động phân loại, lấy Tên/Ảnh Meta và lưu vào Supabase
 async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
     try {
         let conversationId;
@@ -248,18 +249,51 @@ async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
         // 1. Tìm xem khách này đã từng chat chưa
         const { data: existingConv } = await supabase
             .from('chat_conversations')
-            .select('id')
+            .select('id, customer_name')
             .eq('customer_id', senderId)
             .eq('platform', platform)
             .single();
 
         if (!existingConv) {
-            // KHÁCH MỚI: Tạo một hàng mới trong cột Danh sách Hội thoại
+            // KHÁCH MỚI: Khởi tạo dữ liệu mặc định
+            let customerName = "Khách hàng " + senderId.substring(0, 4);
+            let customerAvatar = "";
+
+            // Gọi API Meta để xin Tên thật và Ảnh đại diện
+            if (platform === 'facebook') {
+                const { data: tokenData } = await supabase
+                    .from('social_tokens')
+                    .select('access_token')
+                    .eq('platform', 'facebook')
+                    .single();
+
+                if (tokenData && tokenData.access_token) {
+                    try {
+                        const profileRes = await axios.get(`https://graph.facebook.com/v19.0/${senderId}`, {
+                            params: {
+                                fields: 'name,profile_pic',
+                                access_token: tokenData.access_token
+                            }
+                        });
+                        if (profileRes.data) {
+                            customerName = profileRes.data.name;
+                            customerAvatar = profileRes.data.profile_pic;
+                            console.log(`👤 [Meta] Đã nhận diện được khách: ${customerName}`);
+                        }
+                    } catch (metaErr) {
+                        console.error("❌ [Meta] Lỗi lấy thông tin:", metaErr.response?.data || metaErr.message);
+                    }
+                }
+            }
+
+            // Ghi khách mới vào Database kèm Tên và Ảnh
             const { data: newConv, error: insertError } = await supabase
                 .from('chat_conversations')
                 .insert([{ 
                     customer_id: senderId, 
                     platform: platform,
+                    customer_name: customerName,
+                    customer_avatar: customerAvatar,
                     last_message: text,
                     is_read: false
                 }])
@@ -290,7 +324,7 @@ async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
                 message_text: text
             }]);
 
-        console.log(`💾 Đã lưu thành công tin nhắn của ${senderId} vào Database!`);
+        console.log(`💾 Đã lưu thành công tin nhắn vào Database!`);
     } catch (err) {
         console.error("❌ Lỗi lưu tin nhắn vào DB:", err.message);
     }
