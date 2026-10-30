@@ -583,23 +583,50 @@
         function closeModal() { document.getElementById('modal_preview').classList.add('hidden'); }
         
         // ==============================================
-        // HỆ THỐNG OMNICHANNEL CHAT
+        // HỆ THỐNG OMNICHANNEL CHAT (BẢN NÂNG CẤP REALTIME)
         // ==============================================
         let globalConversations = [];
         let currentConversationId = null;
-        let currentMessageLimit = 20; // Giới hạn mặc định: tải 20 tin nhắn mỗi lần
+        let currentMessageLimit = 20; 
 
-        async function loadChatList() {
+        // 1. KHỞI TẠO SUPABASE CHUNG (Anh điền lại 2 mã Key vào đây nhé)
+        const SUPABASE_URL = 'https://[THAY-BẰNG-PROJECT-ID-CỦA-ANH].supabase.co';
+        const SUPABASE_ANON_KEY = '[THAY-BẰNG-ANON-KEY-CỦA-ANH]';
+        const supabaseChat = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 2. RADAR REALTIME (Lắng nghe sự kiện cắm tin nhắn mới vào màn hình)
+        supabaseChat.channel('room-chat')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, payload => {
+                const newMsg = payload.new;
+                
+                // Nếu tin nhắn mới thuộc về khách hàng đang mở -> Bơm thẳng vào UI không cần F5
+                if (currentConversationId === newMsg.conversation_id) {
+                    const msgContainer = document.getElementById('chat_messages_container');
+                    const isMyMessage = newMsg.sender_type !== 'customer';
+                    const textContent = newMsg.message_text || '[Không có nội dung]';
+                    
+                    const bubbleHtml = isMyMessage ? 
+                        `<div class="flex justify-end mb-2"><div class="bg-blue-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div></div>` : 
+                        `<div class="flex justify-start mb-2"><div class="bg-white text-gray-800 p-3 rounded-2xl rounded-tl-none border border-gray-200 max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div></div>`;
+                    
+                    msgContainer.insertAdjacentHTML('beforeend', bubbleHtml);
+                    
+                    // Tự động cuộn xuống dưới cùng để thấy tin mới
+                    msgContainer.scrollTop = msgContainer.scrollHeight; 
+                }
+                
+                // Dù đang mở chat hay không, luôn tải lại ngầm cột danh sách bên trái để đẩy hội thoại lên đầu
+                loadChatList(false); 
+            })
+            .subscribe();
+
+        // 3. HÀM TẢI DANH SÁCH (Hỗ trợ tải ngầm không gây giật màn hình)
+        async function loadChatList(showLoading = true) {
             const listContainer = document.getElementById('chat_list_container');
-            listContainer.innerHTML = '<div class="text-center text-gray-400 text-sm mt-10">⏳ Đang đồng bộ dữ liệu...</div>';
+            if (showLoading) listContainer.innerHTML = '<div class="text-center text-gray-400 text-sm mt-10">⏳ Đang tải...</div>';
 
             try {
-                // ANH ĐIỀN LẠI THÔNG TIN SUPABASE VÀO ĐÂY NHÉ:
-                const SUPABASE_URL = 'https://btmnilmtgrfevafhybmr.supabase.co';
-                const SUPABASE_ANON_KEY = 'sb_publishable_UrNUgHn5aidMmgHX4TTYcg_Bm-CG0F0';
-                const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-                const { data: conversations, error } = await supabaseClient
+                const { data: conversations, error } = await supabaseChat
                     .from('chat_conversations')
                     .select('*')
                     .order('updated_at', { ascending: false });
@@ -614,34 +641,36 @@
 
                 listContainer.innerHTML = conversations.map(conv => {
                     const isFb = conv.platform === 'facebook';
-                    
-                    // FIX LỖI ICON: Sử dụng nguồn ảnh ổn định từ kho Icons8
                     const platformIcon = isFb 
                         ? '<div class="bg-white rounded-full p-[1px] shadow border border-gray-100"><img src="https://img.icons8.com/color/48/facebook-new.png" class="w-[14px] h-[14px]"></div>' 
                         : '<div class="bg-white rounded-full p-[1px] shadow border border-gray-100"><img src="https://img.icons8.com/color/48/zalo.png" class="w-[14px] h-[14px]"></div>';
                     
                     const avatar = conv.customer_avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.customer_name || 'Khách');
-                    const timeStr = new Date(conv.updated_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute:'2-digit' });
+                    
+                    // Định dạng hiển thị giờ/ngày giống Zalo thật
+                    const dateObj = new Date(conv.updated_at);
+                    const isToday = new Date().toDateString() === dateObj.toDateString();
+                    const timeStr = isToday ? dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute:'2-digit' }) : dateObj.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 
                     return `
-                        <div class="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition rounded-lg flex items-center gap-3" onclick="openChatDetail('${conv.id}')">
+                        <div class="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition rounded-lg flex items-center gap-3 ${currentConversationId === conv.id ? 'bg-blue-50' : ''}" onclick="openChatDetail('${conv.id}')">
                             <div class="relative shrink-0">
                                 <img src="${avatar}" class="w-12 h-12 rounded-full object-cover border border-gray-200">
                                 <div class="absolute -bottom-1 -right-1">${platformIcon}</div>
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="flex justify-between items-baseline mb-1">
-                                    <h4 class="font-bold text-gray-800 text-[13px] truncate">${conv.customer_name}</h4>
+                                    <h4 class="font-bold ${currentConversationId === conv.id ? 'text-blue-700' : 'text-gray-800'} text-[13px] truncate">${conv.customer_name}</h4>
                                     <span class="text-[10px] text-gray-400 whitespace-nowrap ml-2">${timeStr}</span>
                                 </div>
-                                <p class="text-xs text-gray-500 truncate">${conv.last_message || '...'}</p>
+                                <p class="text-xs ${newMsg = true ? 'text-gray-800 font-medium' : 'text-gray-500'} truncate">${conv.last_message || '...'}</p>
                             </div>
                         </div>
                     `;
                 }).join('');
 
             } catch (error) {
-                listContainer.innerHTML = `<div class="text-center text-red-500 text-sm mt-10">❌ Lỗi: ${error.message}</div>`;
+                if (showLoading) listContainer.innerHTML = `<div class="text-center text-red-500 text-sm mt-10">❌ Lỗi: ${error.message}</div>`;
             }
         }
 

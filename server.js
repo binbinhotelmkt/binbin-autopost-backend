@@ -429,72 +429,75 @@ app.post('/webhook/zalo', (req, res) => {
     console.log("📥 [ZALO PAYLOAD RAW]:", JSON.stringify(body, null, 2));
     console.log("====================================");
 
-    // 2. Xử lý lưu database (BẢN ĐÃ SỬA LỖI REQUIRE)
-    if (body && body.event_name === 'user_send_text') {
+    // 2. XỬ LÝ LƯU DATABASE (BẢN NÂNG CẤP ĐA SỰ KIỆN & ĐỒNG BỘ PANCAKE)
+    const event = body?.event_name;
+    
+    // A. LUỒNG KHÁCH HÀNG GỬI ĐẾN (Bắt cả text, ảnh, sticker, audio)
+    if (event && event.startsWith('user_send_')) {
         const senderId = body.sender?.id;
-        const text = body.message?.text;
-        
+        let text = body.message?.text || '';
+
+        // Tự động dịch các định dạng không phải text
+        if (event === 'user_send_image') text = '[Hình ảnh]';
+        else if (event === 'user_send_sticker') text = '[Sticker]';
+        else if (event === 'user_send_audio') text = '[Tin nhắn thoại]';
+        else if (event === 'user_send_location') text = '[Vị trí]';
+        else if (event === 'user_send_link') text = '[Liên kết]';
+
         if (senderId && text) {
-            console.log(`💬 [ZALO] Khách ${senderId} nhắn: "${text}"`);
+            console.log(`💬 [ZALO] Khách ${senderId} gửi: "${text}"`);
             
             (async () => {
                 try {
                     let customerName = `Khách ${senderId.substring(0, 4)}`;
                     let customerAvatar = null;
 
-                    // A. Lấy Access Token Zalo
-                    const { data: zaloToken } = await supabase
-                        .from('social_tokens')
-                        .select('access_token')
-                        .eq('platform', 'zalo')
-                        .single();
+                    const { data: zaloToken } = await supabase.from('social_tokens').select('access_token').eq('platform', 'zalo').single();
 
-                    // B. Gọi API Zalo để tra cứu Tên và Avatar (Đã bỏ dòng require)
                     if (zaloToken && zaloToken.access_token) {
-                        const profileUrl = 'https://openapi.zalo.me/v2.0/oa/getprofile';
-                        
                         try {
-                            const profileRes = await axios.get(profileUrl, {
+                            const profileRes = await axios.get('https://openapi.zalo.me/v2.0/oa/getprofile', {
                                 headers: { 'access_token': zaloToken.access_token },
                                 params: { data: JSON.stringify({ user_id: senderId }) }
                             });
-
-                            if (profileRes.data && profileRes.data.data) {
+                            if (profileRes.data?.data) {
                                 customerName = profileRes.data.data.display_name || customerName;
                                 customerAvatar = profileRes.data.data.avatar || null;
                             }
-                        } catch (profileErr) {
-                            console.error("⚠️ Lỗi tra cứu Profile Zalo:", profileErr.response?.data || profileErr.message);
-                        }
+                        } catch (err) { console.error("Lỗi tra profile Zalo"); }
                     }
 
                     const conversationId = `zalo_${senderId}`; 
                     
-                    // C. Lưu/Cập nhật hội thoại
                     await supabase.from('chat_conversations').upsert({
-                        id: conversationId,
-                        customer_id: senderId,
-                        platform: 'zalo',
-                        customer_name: customerName,
-                        customer_avatar: customerAvatar,
-                        last_message: text,
-                        updated_at: new Date().toISOString()
+                        id: conversationId, customer_id: senderId, platform: 'zalo',
+                        customer_name: customerName, customer_avatar: customerAvatar,
+                        last_message: text, updated_at: new Date().toISOString()
                     }, { onConflict: 'id' });
 
-                    // D. Lưu tin nhắn
                     await supabase.from('chat_messages').insert({
-                        conversation_id: conversationId,
-                        sender_type: 'customer',
-                        message_text: text,
-                        created_at: new Date().toISOString()
+                        conversation_id: conversationId, sender_type: 'customer', message_text: text, created_at: new Date().toISOString()
                     });
-
-                    console.log("✅ Đã lưu đầy đủ Profile và Tin nhắn Zalo vào DB!");
-
-                } catch (dbErr) {
-                    console.error("❌ Lỗi lưu DB Zalo:", dbErr);
-                }
+                } catch (dbErr) { console.error("❌ Lỗi lưu DB Zalo:", dbErr); }
             })();
+        }
+    }
+
+    // B. LUỒNG ĐỒNG BỘ TIN NHẮN TỪ PANCAKE HOẶC ZALO AUTO-REPLY
+    if (event === 'oa_send_text' || event === 'oa_send_image') {
+        const customerId = body.recipient?.id;
+        let text = body.message?.text || (event === 'oa_send_image' ? '[Hình ảnh Lễ tân gửi]' : '');
+
+        if (customerId && text) {
+            const conversationId = `zalo_${customerId}`;
+            // Chỉ cần lưu vào chat_messages với quyền của 'page'
+            supabase.from('chat_messages').insert({
+                conversation_id: conversationId,
+                sender_type: 'page', // Xác nhận đây là tin nhắn từ phía Khách sạn
+                message_text: text,
+                created_at: new Date().toISOString()
+            }).then(() => console.log(`🔄 Đã đồng bộ tin nhắn Pancake/Auto cho khách ${customerId}`))
+              .catch(err => console.error("Lỗi đồng bộ Pancake:", err));
         }
     }
     
