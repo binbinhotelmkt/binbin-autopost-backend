@@ -417,30 +417,30 @@ app.get('/', (req, res) => {
         </html>
     `);
 });
+
 // ==========================================
-// CỔNG POST: Nhận tin nhắn thực tế từ ZALO OA
+// CỔNG POST: Nhận tin nhắn thực tế từ ZALO OA (BẢN BẮT MỌI PAYLOAD)
 // ==========================================
 app.post('/webhook/zalo', (req, res) => {
     const body = req.body;
     
-    // In ra log để anh dễ theo dõi
-    // console.log("📥 [Zalo Webhook] Nhận sự kiện:", body.event_name);
+    // 1. IN RA TOÀN BỘ DỮ LIỆU THÔ ĐỂ BẮT BỆNH
+    console.log("====================================");
+    console.log("📥 [ZALO PAYLOAD RAW]:", JSON.stringify(body, null, 2));
+    console.log("====================================");
 
-    // Zalo có nhiều loại sự kiện, chúng ta chỉ bắt sự kiện khách nhắn tin text
-    if (body.event_name === 'user_send_text') {
+    // 2. Xử lý lưu database
+    if (body && body.event_name === 'user_send_text') {
         const senderId = body.sender?.id;
         const text = body.message?.text;
         
         if (senderId && text) {
             console.log(`💬 [ZALO] Khách ${senderId} nhắn: "${text}"`);
-            // Lưu vào DB với nền tảng là 'zalo'
             saveMessageToSupabase(senderId, text, 'zalo');
         }
     }
     
-    // Tương tự, nếu khách gửi ảnh (user_send_image), anh có thể bổ sung sau
-    
-    // Zalo yêu cầu máy chủ luôn phải trả lời 200 OK ngay lập tức
+    // Luôn phải trả về 200 OK cho Zalo
     res.status(200).send('OK');
 });
 
