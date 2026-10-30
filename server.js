@@ -422,19 +422,20 @@ app.get('/', (req, res) => {
 // CỔNG POST: Nhận tin nhắn thực tế từ ZALO OA (BẢN BẮT MỌI PAYLOAD)
 // ==========================================
 app.post('/webhook/zalo', async (req, res) => {
-    // 1. Phản hồi Zalo ngay lập tức để Zalo không gửi lại tin nhắn nhiều lần
+    // 1. Phản hồi Zalo ngay lập tức
     res.status(200).send("OK");
 
     try {
         const body = req.body;
         const event = body?.event_name;
         
-        // A. LUỒNG KHÁCH HÀNG GỬI ĐẾN (Bắt cả text, ảnh, sticker, audio)
+        // ==========================================
+        // A. LUỒNG KHÁCH HÀNG GỬI ĐẾN
+        // ==========================================
         if (event && event.startsWith('user_send_')) {
             const senderId = body.sender?.id;
             let text = body.message?.text || '';
 
-            // Tự động dịch các định dạng không phải text
             if (event === 'user_send_image') text = '[Hình ảnh]';
             else if (event === 'user_send_sticker') text = '[Sticker]';
             else if (event === 'user_send_audio') text = '[Tin nhắn thoại]';
@@ -447,80 +448,107 @@ app.post('/webhook/zalo', async (req, res) => {
                 let customerName = `Khách ${senderId.substring(0, 4)}`;
                 let customerAvatar = null;
 
-                console.log(`🔍 [Bước 1] Đang tra cứu Token Zalo trong Database...`);
-                const { data: zaloToken, error: tokenErr } = await supabase
-                    .from('social_tokens')
-                    .select('access_token')
-                    .eq('platform', 'zalo')
-                    .single();
-
-                if (tokenErr) console.log("⚠️ (Bỏ qua) Không tìm thấy Token Zalo trong bảng social_tokens.");
+                console.log(`🔍 [Bước 1 & 2] Lấy Profile Zalo...`);
+                const { data: zaloToken } = await supabase.from('social_tokens').select('access_token').eq('platform', 'zalo').single();
 
                 if (zaloToken && zaloToken.access_token) {
-                    console.log(`🔍 [Bước 2] Đang gọi API lấy Profile Zalo (Tên & Avatar)...`);
                     try {
-                        // Sử dụng fetch thuần, không phụ thuộc axios
                         const profileRes = await fetch(`https://openapi.zalo.me/v2.0/oa/getprofile?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
                             headers: { 'access_token': zaloToken.access_token }
                         });
                         const profileData = await profileRes.json();
-                        
-                        if (profileData && profileData.data) {
+                        if (profileData?.data) {
                             customerName = profileData.data.display_name || customerName;
                             customerAvatar = profileData.data.avatar || null;
                         }
-                    } catch (profileErr) {
-                        console.log("⚠️ Lỗi gọi API Profile:", profileErr.message);
-                    }
+                    } catch (e) { console.log("⚠️ Lỗi Profile:", e.message); }
                 }
 
-                console.log(`🔍 [Bước 3] Đang cập nhật bảng chat_conversations...`);
-                const conversationId = `zalo_${senderId}`; 
-                
-                const { error: upsertErr } = await supabase.from('chat_conversations').upsert({
-                    id: conversationId, 
-                    customer_id: senderId, 
-                    platform: 'zalo',
-                    customer_name: customerName, 
-                    customer_avatar: customerAvatar,
-                    last_message: text, 
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'id' });
+                console.log(`🔍 [Bước 3] Xử lý UUID cho bảng chat_conversations...`);
+                let validConversationId;
 
-                if (upsertErr) throw new Error("Lỗi Upsert: " + upsertErr.message);
+                // KIỂM TRA KHÁCH CŨ HAY MỚI
+                const { data: existConv, error: findErr } = await supabase
+                    .from('chat_conversations')
+                    .select('id')
+                    .eq('customer_id', senderId)
+                    .eq('platform', 'zalo')
+                    .maybeSingle();
 
-                console.log(`🔍 [Bước 4] Đang lưu chi tiết vào bảng chat_messages...`);
+                if (findErr) throw new Error("Lỗi tìm hội thoại: " + findErr.message);
+
+                if (existConv) {
+                    // Khách cũ -> Dùng UUID cũ và cập nhật tin nhắn mới nhất
+                    validConversationId = existConv.id;
+                    await supabase.from('chat_conversations').update({
+                        customer_name: customerName,
+                        customer_avatar: customerAvatar,
+                        last_message: text,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', validConversationId);
+                } else {
+                    // Khách mới -> Insert và để Supabase tự sinh UUID (select('id').single() để lấy lại UUID đó)
+                    const { data: newConv, error: insertConvErr } = await supabase.from('chat_conversations').insert({
+                        customer_id: senderId,
+                        platform: 'zalo',
+                        customer_name: customerName,
+                        customer_avatar: customerAvatar,
+                        last_message: text,
+                        updated_at: new Date().toISOString()
+                    }).select('id').single(); 
+
+                    if (insertConvErr) throw new Error("Lỗi Insert hội thoại: " + insertConvErr.message);
+                    validConversationId = newConv.id;
+                }
+
+                console.log(`🔍 [Bước 4] Lưu tin nhắn với UUID chuẩn: ${validConversationId}`);
                 const { error: insertErr } = await supabase.from('chat_messages').insert({
-                    conversation_id: conversationId, 
+                    conversation_id: validConversationId, 
                     sender_type: 'customer', 
                     message_text: text, 
                     created_at: new Date().toISOString()
                 });
 
-                if (insertErr) throw new Error("Lỗi Insert: " + insertErr.message);
-
-                console.log("✅ ĐÃ LƯU THÀNH CÔNG VÀO SUPABASE! RADAR GIAO DIỆN SẼ TỰ BẮT ĐƯỢC.");
+                if (insertErr) throw new Error("Lỗi Insert tin nhắn: " + insertErr.message);
+                console.log("✅ ĐÃ LƯU THÀNH CÔNG VÀO SUPABASE!");
             }
         }
 
-        // B. LUỒNG ĐỒNG BỘ TIN NHẮN TỪ PANCAKE HOẶC ZALO AUTO-REPLY
+        // ==========================================
+        // B. LUỒNG ĐỒNG BỘ PANCAKE (Cũng đã sửa dùng UUID)
+        // ==========================================
         if (event === 'oa_send_text' || event === 'oa_send_image') {
             const customerId = body.recipient?.id;
             let text = body.message?.text || (event === 'oa_send_image' ? '[Hình ảnh Lễ tân gửi]' : '');
 
             if (customerId && text) {
                 console.log(`🔄 [PANCAKE] Đang đồng bộ tin nhắn gửi cho khách ${customerId}...`);
-                const conversationId = `zalo_${customerId}`;
                 
-                const { error: syncErr } = await supabase.from('chat_messages').insert({
-                    conversation_id: conversationId,
-                    sender_type: 'page', 
-                    message_text: text,
-                    created_at: new Date().toISOString()
-                });
-                
-                if (syncErr) console.error("❌ Lỗi đồng bộ Pancake:", syncErr.message);
-                else console.log(`✅ Đồng bộ xong tin nhắn Pancake!`);
+                // Lấy UUID của khách từ CSDL
+                const { data: existConv } = await supabase
+                    .from('chat_conversations')
+                    .select('id')
+                    .eq('customer_id', customerId)
+                    .eq('platform', 'zalo')
+                    .maybeSingle();
+                    
+                if (existConv) {
+                    await supabase.from('chat_messages').insert({
+                        conversation_id: existConv.id,
+                        sender_type: 'page', 
+                        message_text: text,
+                        created_at: new Date().toISOString()
+                    });
+                    
+                    await supabase.from('chat_conversations').update({
+                        last_message: text,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', existConv.id);
+                    
+                    console.log(`✅ Đồng bộ xong tin nhắn Pancake!`);
+                } else {
+                    console.log("⚠️ Không tìm thấy hội thoại để đồng bộ.");
+                }
             }
         }
 
