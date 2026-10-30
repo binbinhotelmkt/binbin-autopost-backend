@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bin Bin Hotel - Hệ Thống Đăng Bài</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Thư viện Icon FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Nhúng thư viện SDK chính thức của Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
@@ -43,10 +45,111 @@
         <div class="bg-white shadow-sm mb-6">
             <div class="max-w-7xl mx-auto px-6 flex justify-between items-center border-b border-gray-200">
                 <div class="flex gap-6">
+                    <button class="nav-btn py-4 text-gray-600 font-medium hover:text-blue-600 transition" onclick="switchMainTab('tab_chat', this); loadChatList();">💬 Tin Nhắn Đa Kênh</button>
                     <button class="nav-btn active py-4 text-gray-600 font-medium hover:text-blue-600 transition" onclick="switchMainTab('tab_create', this)">🚀 Trạm Đăng Bài</button>
                     <button class="nav-btn py-4 text-gray-600 font-medium hover:text-blue-600 transition" onclick="switchMainTab('tab_manage', this); loadPosts();">📋 Quản Lý Lịch Sử</button>
                 </div>
                 <button onclick="logout()" class="text-red-500 hover:text-red-700 font-semibold text-sm">🚪 Đăng xuất</button>
+            </div>
+        </div>
+
+    <!-- ============================================== -->
+        <!-- TAB CHAT: OMNICHANNEL (MỚI THÊM) -->
+        <!-- ============================================== -->
+        <div id="tab_chat" class="main-tab hidden">
+            <div class="bg-white rounded-xl shadow-md h-[75vh] flex overflow-hidden border border-gray-200">
+                <!-- Cột trái: Danh sách khách hàng -->
+                <div class="w-1/3 max-w-[350px] border-r border-gray-200 flex flex-col bg-gray-50">
+                    <div class="p-4 border-b border-gray-200 bg-white flex justify-between items-center">
+                        <h3 class="font-bold text-lg text-gray-800">Hộp thư đến</h3>
+                        <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">Omnichannel</span>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-2 space-y-1" id="chat_list_container">
+                        <div class="text-center text-gray-400 text-sm mt-10">Đang tải danh sách...</div>
+                    </div>
+                </div>
+                
+                <!-- Cột phải: Khung chat chi tiết -->
+                <div class="flex-1 flex flex-col bg-white">
+                    <div class="p-4 border-b border-gray-200 bg-white flex items-center gap-3">
+                        <div class="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 font-bold" id="chat_header_avatar">?</div>
+                        <div>
+                            <h3 class="font-bold text-gray-800" id="chat_header_name">Chọn một khách hàng</h3>
+                            <p class="text-xs text-gray-500" id="chat_header_platform">---</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex-1 p-4 overflow-y-auto bg-gray-100 flex flex-col gap-3" id="chat_messages_container">
+                        <div class="text-center text-gray-400 mt-20">Lịch sử trò chuyện sẽ hiển thị ở đây</div>
+                    </div>
+                    
+                    <!-- Thanh công cụ Pancake style (ĐÃ TÍCH HỢP ĐẦY ĐỦ POPUP) -->
+                        <div class="bg-white border-t border-gray-200 flex flex-col shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10 relative">
+                            
+                            <!-- Bảng Popup (Ẩn mặc định, nổi lên trên thanh công cụ) -->
+                            <div class="absolute bottom-full left-0 mb-2 w-full px-3 z-20 pointer-events-none flex flex-col items-start gap-2">
+                                
+                                <!-- 1. Popup Emoji -->
+                                <div id="emoji_picker" class="hidden pointer-events-auto bg-white border border-gray-200 shadow-xl rounded-xl p-3 w-[280px]">
+                                    <div class="text-xs text-gray-400 mb-2 font-semibold px-1">Biểu tượng cảm xúc</div>
+                                    <div class="grid grid-cols-7 gap-1 text-xl text-center">
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('😀')">😀</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('😂')">😂</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('🥰')">🥰</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('😍')">😍</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('😎')">😎</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('🤔')">🤔</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('😭')">😭</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('👍')">👍</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('❤️')">❤️</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('🎉')">🎉</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('🙏')">🙏</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('🤝')">🤝</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('🏨')">🏨</span>
+                                        <span class="cursor-pointer hover:bg-gray-100 rounded py-1 transition" onclick="insertText('✨')">✨</span>
+                                    </div>
+                                </div>
+
+                                <!-- 2. Popup Tin nhắn mẫu -->
+                                <div id="quick_reply_picker" class="hidden pointer-events-auto bg-white border border-gray-200 shadow-xl rounded-xl w-[320px] overflow-hidden">
+                                    <div class="bg-gray-50 px-3 py-2 font-bold text-sm border-b border-gray-200 text-gray-700 flex justify-between items-center">
+                                        <span>Tin nhắn mẫu (Phím tắt)</span>
+                                        <i class="fa-solid fa-gear text-gray-400 hover:text-blue-600 cursor-pointer"></i>
+                                    </div>
+                                    <div class="max-h-[200px] overflow-y-auto flex flex-col">
+                                        <button onclick="insertText('Dạ Bin Bin Hotel xin chào anh/chị ạ. Em có thể hỗ trợ thông tin gì cho mình ạ?')" class="text-left px-3 py-2.5 text-sm hover:bg-blue-50 border-b border-gray-100 transition truncate"><span class="font-bold text-blue-600 mr-2">/chao</span> 👋 Chào hỏi khách mới</button>
+                                        <button onclick="insertText('Dạ phòng loại tiêu chuẩn (Standard) bên em đang có giá là...')" class="text-left px-3 py-2.5 text-sm hover:bg-blue-50 border-b border-gray-100 transition truncate"><span class="font-bold text-blue-600 mr-2">/gia_std</span> 🏨 Báo giá phòng Standard</button>
+                                        <button onclick="insertText('Dạ khách sạn Bin Bin có địa chỉ tại Q7. Anh/chị có thể đi theo định vị Google Maps này ạ: [Link]')" class="text-left px-3 py-2.5 text-sm hover:bg-blue-50 border-b border-gray-100 transition truncate"><span class="font-bold text-blue-600 mr-2">/vitri</span> 📍 Gửi định vị bản đồ</button>
+                                        <button onclick="insertText('Dạ em đã nhận được thông tin chuyển khoản. Em xin phép xác nhận Booking của mình thành công ạ. Cảm ơn anh/chị!')" class="text-left px-3 py-2.5 text-sm hover:bg-blue-50 transition truncate"><span class="font-bold text-green-600 mr-2">/xacnhan</span> ✅ Xác nhận chuyển khoản</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <input type="file" id="chat_image_upload" accept="image/*,video/mp4" class="hidden" multiple>
+                            <input type="file" id="chat_file_upload" accept=".pdf,.doc,.docx,.xls,.xlsx" class="hidden" multiple>
+
+                            <div id="chat_attachment_preview" class="hidden px-4 py-3 bg-gray-50 border-b border-gray-100 flex gap-3 overflow-x-auto"></div>
+
+                            <!-- Dàn nút tính năng (Đã gắn sự kiện onclick) -->
+                            <div class="flex gap-1 text-gray-500 px-3 py-2">
+                                <button onclick="document.getElementById('chat_image_upload').click()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-blue-50 hover:text-blue-600 transition tooltip text-lg" title="Gửi hình ảnh"><i class="fa-regular fa-image"></i></button>
+                                <button onclick="document.getElementById('chat_file_upload').click()" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 hover:text-gray-700 transition tooltip text-lg" title="Gửi file tài liệu"><i class="fa-solid fa-paperclip"></i></button>
+                                <button onclick="toggleChatPopup('emoji_picker')" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-yellow-50 hover:text-yellow-600 transition tooltip text-lg" title="Icon / Emoji"><i class="fa-regular fa-face-smile"></i></button>
+                                <button onclick="toggleChatPopup('quick_reply_picker')" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-purple-50 hover:text-purple-600 transition tooltip text-lg" title="Tin nhắn mẫu"><i class="fa-solid fa-bolt"></i></button>
+                                <div class="w-[1px] h-5 bg-gray-300 mx-2 my-auto"></div>
+                                <button onclick="alert('Tính năng Gọi điện đang được nâng cấp. Sẽ kết nối trực tiếp với Zalo Call và Tổng đài ảo trong phiên bản tới.')" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-green-50 hover:text-green-600 transition tooltip text-lg" title="Gọi thoại / Video"><i class="fa-solid fa-phone-volume"></i></button>
+                                <button onclick="alert('Tính năng Tạo Booking đang được xây dựng. Khi hoàn thiện, nút này sẽ mở Lịch phòng PMS để anh chốt đơn ngay tại đây.')" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-red-50 hover:text-red-600 transition tooltip text-lg" title="Tạo đơn hàng/Booking"><i class="fa-solid fa-cart-shopping"></i></button>
+                            </div>
+                            
+                            <!-- Khung chat -->
+                            <div class="flex gap-2 px-3 pb-3">
+                                <input type="text" id="chat_input_text" onkeypress="if(event.key === 'Enter') sendChatMessage()" class="flex-1 p-3 bg-gray-50 border border-gray-300 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition text-[15px]" placeholder="Nhập tin nhắn trả lời...">
+                                <button onclick="sendChatMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl font-bold transition flex items-center gap-2 shadow-md">
+                                    <span>Gửi</span> <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                </div>
             </div>
         </div>
 
@@ -478,6 +581,346 @@
             document.getElementById('modal_preview').classList.remove('hidden');
         }
         function closeModal() { document.getElementById('modal_preview').classList.add('hidden'); }
+        
+        // ==============================================
+        // HỆ THỐNG OMNICHANNEL CHAT
+        // ==============================================
+        let globalConversations = [];
+        let currentConversationId = null;
+        let currentMessageLimit = 20; // Giới hạn mặc định: tải 20 tin nhắn mỗi lần
+
+        async function loadChatList() {
+            const listContainer = document.getElementById('chat_list_container');
+            listContainer.innerHTML = '<div class="text-center text-gray-400 text-sm mt-10">⏳ Đang đồng bộ dữ liệu...</div>';
+
+            try {
+                // ANH ĐIỀN LẠI THÔNG TIN SUPABASE VÀO ĐÂY NHÉ:
+                const SUPABASE_URL = 'https://btmnilmtgrfevafhybmr.supabase.co';
+                const SUPABASE_ANON_KEY = 'sb_publishable_UrNUgHn5aidMmgHX4TTYcg_Bm-CG0F0';
+                const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+                const { data: conversations, error } = await supabaseClient
+                    .from('chat_conversations')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
+
+                if (error) throw error;
+                globalConversations = conversations;
+
+                if (conversations.length === 0) {
+                    listContainer.innerHTML = '<div class="text-center text-gray-400 text-sm mt-10">Chưa có khách hàng nào.</div>';
+                    return;
+                }
+
+                listContainer.innerHTML = conversations.map(conv => {
+                    const isFb = conv.platform === 'facebook';
+                    
+                    // FIX LỖI ICON: Sử dụng nguồn ảnh ổn định từ kho Icons8
+                    const platformIcon = isFb 
+                        ? '<div class="bg-white rounded-full p-[1px] shadow border border-gray-100"><img src="https://img.icons8.com/color/48/facebook-new.png" class="w-[14px] h-[14px]"></div>' 
+                        : '<div class="bg-white rounded-full p-[1px] shadow border border-gray-100"><img src="https://img.icons8.com/color/48/zalo.png" class="w-[14px] h-[14px]"></div>';
+                    
+                    const avatar = conv.customer_avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.customer_name || 'Khách');
+                    const timeStr = new Date(conv.updated_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute:'2-digit' });
+
+                    return `
+                        <div class="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition rounded-lg flex items-center gap-3" onclick="openChatDetail('${conv.id}')">
+                            <div class="relative shrink-0">
+                                <img src="${avatar}" class="w-12 h-12 rounded-full object-cover border border-gray-200">
+                                <div class="absolute -bottom-1 -right-1">${platformIcon}</div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between items-baseline mb-1">
+                                    <h4 class="font-bold text-gray-800 text-[13px] truncate">${conv.customer_name}</h4>
+                                    <span class="text-[10px] text-gray-400 whitespace-nowrap ml-2">${timeStr}</span>
+                                </div>
+                                <p class="text-xs text-gray-500 truncate">${conv.last_message || '...'}</p>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                listContainer.innerHTML = `<div class="text-center text-red-500 text-sm mt-10">❌ Lỗi: ${error.message}</div>`;
+            }
+        }
+
+
+        // HÀM MỞ CHI TIẾT CHAT (Đã tích hợp Logic Tải thêm tin nhắn cũ)
+        async function openChatDetail(convId, isLoadMore = false) {
+            const conv = globalConversations.find(c => c.id === convId);
+            if (!conv) return;
+
+            currentConversationId = convId;
+            const msgContainer = document.getElementById('chat_messages_container');
+
+            // Xử lý logic Phân trang (Pagination)
+            if (!isLoadMore) {
+                // Nếu bấm mở khách hàng mới -> Reset lại tải 20 tin nhắn
+                currentMessageLimit = 20; 
+                document.getElementById('chat_header_name').innerText = conv.customer_name || 'Khách hàng';
+                
+                // Cập nhật lại Icon trên thanh Header
+                document.getElementById('chat_header_platform').innerHTML = conv.platform === 'facebook' 
+                    ? '<div class="flex items-center gap-1 text-blue-600"><img src="https://img.icons8.com/color/48/facebook-new.png" class="w-4 h-4"> Fanpage Facebook</div>' 
+                    : '<div class="flex items-center gap-1 text-blue-500"><img src="https://img.icons8.com/color/48/zalo.png" class="w-4 h-4"> Zalo OA</div>';
+                
+                const avatarUrl = conv.customer_avatar || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(conv.customer_name || 'Khách');
+                document.getElementById('chat_header_avatar').innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover rounded-full">`;
+                msgContainer.innerHTML = '<div class="text-center text-blue-500 text-sm mt-20"><i class="fa-solid fa-spinner fa-spin"></i> Đang tải lịch sử trò chuyện...</div>';
+            } else {
+                // Nếu bấm nút Tải thêm -> Cộng thêm 20 tin nhắn nữa vào biến giới hạn
+                currentMessageLimit += 20;
+                document.getElementById('btn_load_more').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang tải...';
+            }
+
+            try {
+                // ANH ĐIỀN LẠI THÔNG TIN SUPABASE VÀO ĐÂY NHÉ:
+                const SUPABASE_URL = 'https://btmnilmtgrfevafhybmr.supabase.co';
+                const SUPABASE_ANON_KEY = 'sb_publishable_UrNUgHn5aidMmgHX4TTYcg_Bm-CG0F0';
+                const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+                // Quan trọng: Gọi Supabase lấy tin mới nhất (ascending: false) và giới hạn số lượng (limit)
+                const { data: messagesDesc, error } = await supabaseClient
+                    .from('chat_messages')
+                    .select('*')
+                    .eq('conversation_id', convId)
+                    .order('created_at', { ascending: false }) 
+                    .limit(currentMessageLimit); 
+
+                if (error) throw error;
+
+                if (messagesDesc.length === 0) {
+                    msgContainer.innerHTML = '<div class="text-center text-gray-400 mt-20">Chưa có tin nhắn chi tiết.</div>';
+                    return;
+                }
+
+                // Đảo ngược mảng để vẽ tin cũ lên trên, tin mới xuống dưới cùng
+                const messages = messagesDesc.reverse();
+
+                // Tạo nút "Tải thêm" (Chỉ hiện nếu vẫn còn tin nhắn cũ để tải)
+                const loadMoreBtn = messages.length >= currentMessageLimit 
+                    ? `<div class="text-center my-3"><button id="btn_load_more" onclick="openChatDetail('${convId}', true)" class="bg-white border border-gray-300 text-gray-500 text-xs font-semibold px-4 py-1.5 rounded-full hover:bg-gray-50 hover:text-blue-600 shadow-sm transition"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Tải thêm tin nhắn cũ</button></div>` 
+                    : '<div class="text-center my-3 text-xs text-gray-400">Đã tải toàn bộ tin nhắn</div>';
+
+                const messagesHtml = messages.map(msg => {
+                    const isMyMessage = msg.sender_type !== 'customer';
+                    const textContent = msg.message_text || '[Không có nội dung]';
+
+                    if (isMyMessage) {
+                        return `
+                            <div class="flex justify-end mb-2">
+                                <div class="bg-blue-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div>
+                            </div>`;
+                    } else {
+                        return `
+                            <div class="flex justify-start mb-2">
+                                <div class="bg-white text-gray-800 p-3 rounded-2xl rounded-tl-none border border-gray-200 max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div>
+                            </div>`;
+                    }
+                }).join('');
+                
+                // Vẽ ra giao diện
+                msgContainer.innerHTML = loadMoreBtn + messagesHtml;
+
+                // Xử lý thanh cuộn
+                if (!isLoadMore) {
+                    // Nếu mở lần đầu, tự động cuộn xuống dưới cùng xem tin mới nhất
+                    msgContainer.scrollTop = msgContainer.scrollHeight;
+                }
+            } catch (error) {
+                if(!isLoadMore) {
+                    msgContainer.innerHTML = `<div class="text-center text-red-500 text-sm mt-20">❌ Lỗi tải tin nhắn: ${error.message}</div>`;
+                } else {
+                    document.getElementById('btn_load_more').innerHTML = '❌ Lỗi tải, thử lại';
+                }
+            }
+        }
+        // ==============================================
+        // LOGIC XỬ LÝ KHUNG NHẬP LIỆU CHAT
+        // ==============================================
+        let chatAttachments = []; // Mảng chứa các file chuẩn bị gửi
+        // 4. Xử lý Menu nổi (Emoji & Tin nhắn mẫu)
+        function toggleChatPopup(popupId) {
+            const emojiPicker = document.getElementById('emoji_picker');
+            const quickPicker = document.getElementById('quick_reply_picker');
+            
+            // Đóng mở thông minh: Bật cái này thì tắt cái kia
+            if (popupId === 'emoji_picker') {
+                emojiPicker.classList.toggle('hidden');
+                quickPicker.classList.add('hidden');
+            } else if (popupId === 'quick_reply_picker') {
+                quickPicker.classList.toggle('hidden');
+                emojiPicker.classList.add('hidden');
+            }
+        }
+
+        // Chèn chữ/Icon vào khung chat
+        function insertText(text) {
+            const inputEl = document.getElementById('chat_input_text');
+            // Nếu là câu dài (tin nhắn mẫu) thì có thêm dấu cách, nếu là emoji thì nối liền
+            if (text.length > 2 && inputEl.value !== '') {
+                inputEl.value += ' ' + text;
+            } else {
+                inputEl.value += text;
+            }
+            
+            inputEl.focus(); // Đưa con trỏ nháy về lại ô chat
+            
+            // Ẩn các popup đi sau khi chọn xong
+            document.getElementById('emoji_picker').classList.add('hidden');
+            document.getElementById('quick_reply_picker').classList.add('hidden');
+        }
+
+        // Tự động ẩn Popup nếu user click ra chỗ khác ngoài thanh công cụ
+        document.addEventListener('click', function(event) {
+            const toolbar = document.querySelector('.z-10.relative');
+            if (toolbar && !toolbar.contains(event.target)) {
+                document.getElementById('emoji_picker')?.classList.add('hidden');
+                document.getElementById('quick_reply_picker')?.classList.add('hidden');
+            }
+        });
+        // 1. Bắt sự kiện khi người dùng chọn file/ảnh
+        document.getElementById('chat_image_upload').addEventListener('change', handleChatFiles);
+        document.getElementById('chat_file_upload').addEventListener('change', handleChatFiles);
+
+        function handleChatFiles(e) {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            // Cảnh báo nếu chọn quá nhiều (Zalo/FB thường giới hạn số lượng ảnh gửi trong 1 tin)
+            if (chatAttachments.length + files.length > 5) {
+                alert("Chỉ nên gửi tối đa 5 file/ảnh cùng lúc để tránh bị lỗi từ Zalo/Facebook.");
+                return;
+            }
+
+            chatAttachments = chatAttachments.concat(files);
+            renderAttachmentPreview();
+            
+            // Reset input để có thể chọn lại đúng file đó lần sau
+            e.target.value = ''; 
+        }
+
+        // 2. Hiển thị ảnh/file lên khu vực Preview
+        function renderAttachmentPreview() {
+            const previewContainer = document.getElementById('chat_attachment_preview');
+            
+            if (chatAttachments.length === 0) {
+                previewContainer.classList.add('hidden');
+                return;
+            }
+            
+            previewContainer.classList.remove('hidden');
+            previewContainer.innerHTML = chatAttachments.map((file, index) => {
+                const isImage = file.type.startsWith('image/');
+                const thumbUrl = isImage ? URL.createObjectURL(file) : 'https://img.icons8.com/color/48/document.png';
+                
+                return `
+                    <div class="relative w-16 h-16 bg-white border border-gray-300 rounded-lg overflow-hidden shrink-0 shadow-sm group">
+                        <img src="${thumbUrl}" class="w-full h-full object-cover">
+                        ${!isImage ? `<div class="absolute bottom-0 w-full bg-black bg-opacity-60 text-white text-[9px] text-center truncate px-1">${file.name}</div>` : ''}
+                        <button onclick="removeChatAttachment(${index})" class="absolute top-0 right-0 bg-black bg-opacity-60 text-white w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 transition backdrop-blur-sm rounded-bl-lg">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function removeChatAttachment(index) {
+            chatAttachments.splice(index, 1);
+            renderAttachmentPreview();
+        }
+
+        // 3. Hàm Gửi Tin Nhắn Thực Chiến (Gọi API)
+        async function sendChatMessage() {
+            const inputEl = document.getElementById('chat_input_text');
+            const text = inputEl.value.trim();
+            
+            if (!currentConversationId) return alert("Vui lòng chọn 1 khách hàng trước khi nhắn!");
+            if (!text && chatAttachments.length === 0) return alert("Vui lòng nhập tin nhắn hoặc đính kèm ảnh/file!");
+
+            // Lấy thông tin khách hàng đang chat
+            const conv = globalConversations.find(c => c.id === currentConversationId);
+            if (!conv) return alert("Lỗi: Không tìm thấy thông tin cuộc hội thoại!");
+
+            // [Hiệu ứng UI] Đẩy bong bóng chat lên màn hình ngay lập tức (Làm mờ, xoay icon loading)
+            const msgContainer = document.getElementById('chat_messages_container');
+            const tempId = 'temp_' + Date.now();
+            let attachmentNotice = '';
+            
+            if (chatAttachments.length > 0) {
+                attachmentNotice = `<div class="text-[12px] text-blue-200 mt-1 italic"><i class="fa-solid fa-paperclip"></i> Đính kèm ${chatAttachments.length} file...</div>`;
+            }
+
+            msgContainer.innerHTML += `
+                <div class="flex justify-end mb-2" id="${tempId}">
+                    <div class="bg-blue-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[70%] shadow-sm opacity-60">
+                        <p class="text-[14px]">${text}</p>
+                        ${attachmentNotice}
+                        <div id="status_${tempId}" class="text-right text-[10px] mt-1 text-blue-200"><i class="fa-solid fa-spinner fa-spin"></i> Đang chuẩn bị gửi...</div>
+                    </div>
+                </div>`;
+            msgContainer.scrollTop = msgContainer.scrollHeight;
+
+            // Cache dữ liệu và dọn dẹp Form
+            const textToSend = text;
+            const filesToSend = [...chatAttachments];
+            inputEl.value = '';
+            chatAttachments = [];
+            renderAttachmentPreview();
+
+            try {
+                let mediaUrls = [];
+                // BƯỚC A: TẢI ẢNH/FILE LÊN SUPABASE (Nếu Lễ tân có đính kèm)
+                if (filesToSend.length > 0) {
+                    // ĐIỀN LẠI 2 MÃ KEY SUPABASE CỦA ANH VÀO ĐÂY:
+                    const SUPABASE_URL = 'https://btmnilmtgrfevafhybmr.supabase.co';
+                    const SUPABASE_ANON_KEY = 'sb_publishable_UrNUgHn5aidMmgHX4TTYcg_Bm-CG0F0';
+                    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+                    for (const file of filesToSend) {
+                        const safeName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9.-]/g, "_");
+                        const fileName = `chat_${Date.now()}_${safeName}`;
+                        
+                        document.getElementById(`status_${tempId}`).innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang tải file: ${file.name}...`;
+                        
+                        // Đẩy vào chung kho social_media (hoặc anh có thể tạo kho chat_media trên Supabase)
+                        const { data, error } = await supabaseClient.storage.from('social_media').upload(fileName, file, { cacheControl: '3600', upsert: true });
+                        if (error) throw new Error(`Lỗi upload ảnh: ${error.message}`);
+                        
+                        mediaUrls.push(`${SUPABASE_URL}/storage/v1/object/public/social_media/${fileName}`);
+                    }
+                }
+
+                // BƯỚC B: GỌI MÁY CHỦ RENDER ĐỂ BẮN TIN ĐI
+                document.getElementById(`status_${tempId}`).innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang gửi qua ${conv.platform}...`;
+                
+                const res = await fetch(`${API_BASE}/chat/send`, {
+                    method: 'POST',
+                    headers: { ...getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: conv.id,
+                        platform: conv.platform,
+                        customer_id: conv.customer_id, // Gửi ID của khách để Backend biết đường bắn lại
+                        text: textToSend,
+                        media_urls: mediaUrls
+                    })
+                });
+
+                const data = await res.json();
+                if (!data.success) throw new Error(data.message);
+
+                // BƯỚC C: CẬP NHẬT GIAO DIỆN THÀNH CÔNG (Bỏ làm mờ, hiện 2 dấu tick)
+                const bubble = document.getElementById(tempId);
+                bubble.querySelector('.opacity-60').classList.remove('opacity-60');
+                document.getElementById(`status_${tempId}`).innerHTML = `<i class="fa-solid fa-check-double"></i> Đã gửi`;
+                
+            } catch (error) {
+                // BÁO LỖI UI
+                document.getElementById(`status_${tempId}`).innerHTML = `<span class="text-red-300 font-bold"><i class="fa-solid fa-circle-exclamation"></i> Lỗi: ${error.message}</span>`;
+            }
+        }
     </script>
 </body>
 </html>

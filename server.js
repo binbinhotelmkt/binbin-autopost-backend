@@ -429,19 +429,125 @@ app.post('/webhook/zalo', (req, res) => {
     console.log("📥 [ZALO PAYLOAD RAW]:", JSON.stringify(body, null, 2));
     console.log("====================================");
 
-    // 2. Xử lý lưu database
+    // 2. Xử lý lưu database (BẢN NÂNG CẤP LẤY PROFILE)
     if (body && body.event_name === 'user_send_text') {
         const senderId = body.sender?.id;
         const text = body.message?.text;
         
         if (senderId && text) {
             console.log(`💬 [ZALO] Khách ${senderId} nhắn: "${text}"`);
-            saveMessageToSupabase(senderId, text, 'zalo');
+            
+            // Xử lý bất đồng bộ để lấy Profile và lưu DB
+            (async () => {
+                try {
+                    let customerName = `Khách ${senderId.substring(0, 4)}`;
+                    let customerAvatar = null;
+
+                    // A. Lấy Access Token Zalo từ bảng social_tokens để có quyền tra cứu
+                    const { data: zaloToken } = await supabase
+                        .from('social_tokens')
+                        .select('access_token')
+                        .eq('platform', 'zalo')
+                        .single();
+
+                    // B. Gọi API Zalo để tra cứu Tên và Avatar
+                    if (zaloToken && zaloToken.access_token) {
+                        const axios = require('axios'); // Đảm bảo anh đã khai báo axios ở đầu file
+                        const profileUrl = 'https://openapi.zalo.me/v2.0/oa/getprofile';
+                        
+                        try {
+                            const profileRes = await axios.get(profileUrl, {
+                                headers: { 'access_token': zaloToken.access_token },
+                                params: { data: JSON.stringify({ user_id: senderId }) }
+                            });
+
+                            if (profileRes.data && profileRes.data.data) {
+                                customerName = profileRes.data.data.display_name || customerName;
+                                customerAvatar = profileRes.data.data.avatar || null;
+                            }
+                        } catch (profileErr) {
+                            console.error("⚠️ Lỗi tra cứu Profile Zalo:", profileErr.response?.data || profileErr.message);
+                        }
+                    }
+
+                    // C. Lưu vào bảng chat_conversations (Upsert: Có thì cập nhật avatar/tên/tin mới, chưa có thì tạo mới)
+                    // Lưu ý: ID của conversation có thể cấu tạo từ senderId và platform
+                    const conversationId = `zalo_${senderId}`; 
+                    
+                    await supabase.from('chat_conversations').upsert({
+                        id: conversationId,
+                        customer_id: senderId,
+                        platform: 'zalo',
+                        customer_name: customerName,
+                        customer_avatar: customerAvatar,
+                        last_message: text,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'id' });
+
+                    // D. Lưu vào bảng chat_messages
+                    await supabase.from('chat_messages').insert({
+                        conversation_id: conversationId,
+                        sender_type: 'customer',
+                        message_text: text,
+                        created_at: new Date().toISOString()
+                    });
+
+                    console.log("✅ Đã lưu đầy đủ Profile và Tin nhắn Zalo vào DB!");
+
+                } catch (dbErr) {
+                    console.error("❌ Lỗi lưu DB Zalo:", dbErr);
+                }
+            })();
         }
     }
     
     // Luôn phải trả về 200 OK cho Zalo
     res.status(200).send('OK');
+});
+
+// ==========================================
+// API: LỄ TÂN GỬI TIN NHẮN TỪ GIAO DIỆN PMS
+// ==========================================
+app.post('/api/chat/send', async (req, res) => {
+    try {
+        // req.user được lấy từ middleware xác thực token (nếu anh có)
+        const { conversation_id, platform, customer_id, text, media_urls } = req.body;
+
+        if (!conversation_id || !platform || !customer_id) {
+            return res.status(400).json({ success: false, message: "Thiếu thông tin người nhận!" });
+        }
+
+        // 1. LƯU LỊCH SỬ VÀO DATABASE TRƯỚC
+        // Lưu vào bảng chat_messages với sender_type là 'page' hoặc 'admin'
+        const { error: dbError } = await supabase.from('chat_messages').insert([{
+            conversation_id: conversation_id,
+            sender_type: 'page', // Xác định đây là tin do Lễ tân gửi
+            message_text: text || '',
+            attachments: media_urls && media_urls.length > 0 ? JSON.stringify(media_urls) : null,
+            created_at: new Date().toISOString()
+        }]);
+
+        if (dbError) throw new Error("Không thể lưu tin nhắn vào CSDL: " + dbError.message);
+
+        // 2. PHÂN LUỒNG BẮN API SANG FACEBOOK HOẶC ZALO
+        if (platform === 'facebook') {
+            // Logic lấy Page Token từ bảng social_tokens và gọi Axios sang Facebook Graph API
+            // (Chúng ta sẽ viết chi tiết luồng Facebook sau khi anh test UI xong)
+            console.log(`[FB] Đang bắn tin nhắn "${text}" tới ID: ${customer_id}`);
+            
+        } else if (platform === 'zalo') {
+            // Logic lấy Zalo Token từ bảng social_tokens và gọi Zalo OpenAPI
+            // (Chúng ta sẽ viết chi tiết luồng Zalo sau khi anh test UI xong)
+            console.log(`[ZALO] Đang bắn tin nhắn "${text}" tới ID: ${customer_id}`);
+        }
+
+        // 3. TRẢ KẾT QUẢ VỀ CHO TRÌNH DUYỆT CẬP NHẬT 2 DẤU TICK
+        res.json({ success: true, message: "Đã gửi thành công!" });
+
+    } catch (error) {
+        console.error("❌ Lỗi gửi tin nhắn chat:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
