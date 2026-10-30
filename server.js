@@ -286,6 +286,32 @@ async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
                 }
             }
 
+            // [CODE MỚI] BỔ SUNG: Gọi API Zalo để xin Tên thật và Ảnh đại diện
+            if (platform === 'zalo') {
+                const { data: tokenData } = await supabase
+                    .from('social_tokens')
+                    .select('access_token')
+                    .eq('platform', 'zalo')
+                    .single();
+
+                if (tokenData && tokenData.access_token) {
+                    try {
+                        const profileRes = await axios.get('https://openapi.zalo.me/v2.0/oa/getprofile', {
+                            params: { data: JSON.stringify({ user_id: senderId }) },
+                            headers: { 'access_token': tokenData.access_token }
+                        });
+                        
+                        if (profileRes.data && profileRes.data.data) {
+                            customerName = profileRes.data.data.display_name;
+                            customerAvatar = profileRes.data.data.avatar;
+                            console.log(`👤 [Zalo] Đã nhận diện được khách: ${customerName}`);
+                        }
+                    } catch (zaloErr) {
+                        console.error("❌ [Zalo] Lỗi lấy thông tin:", zaloErr.message);
+                    }
+                }
+            }
+
             // Ghi khách mới vào Database kèm Tên và Ảnh
             const { data: newConv, error: insertError } = await supabase
                 .from('chat_conversations')
@@ -372,6 +398,50 @@ app.post('/webhook/facebook', (req, res) => {
     } else {
         res.sendStatus(404);
     }
+});
+
+// ==========================================
+// CỔNG GET: TRANG CHỦ & XÁC THỰC ZALO DOMAIN
+// ==========================================
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta property="zalo-platform-site-verification" content="Rlg74OVOCmPzsOO6ZUS694_LYNgZer8dC3Ss" />
+            <title>Bin Bin Hotel - Webhook Server</title>
+        </head>
+        <body>
+            <h1>Máy chủ Webhook đa kênh Bin Bin Hotel đang hoạt động!</h1>
+        </body>
+        </html>
+    `);
+});
+// ==========================================
+// CỔNG POST: Nhận tin nhắn thực tế từ ZALO OA
+// ==========================================
+app.post('/webhook/zalo', (req, res) => {
+    const body = req.body;
+    
+    // In ra log để anh dễ theo dõi
+    // console.log("📥 [Zalo Webhook] Nhận sự kiện:", body.event_name);
+
+    // Zalo có nhiều loại sự kiện, chúng ta chỉ bắt sự kiện khách nhắn tin text
+    if (body.event_name === 'user_send_text') {
+        const senderId = body.sender?.id;
+        const text = body.message?.text;
+        
+        if (senderId && text) {
+            console.log(`💬 [ZALO] Khách ${senderId} nhắn: "${text}"`);
+            // Lưu vào DB với nền tảng là 'zalo'
+            saveMessageToSupabase(senderId, text, 'zalo');
+        }
+    }
+    
+    // Tương tự, nếu khách gửi ảnh (user_send_image), anh có thể bổ sung sau
+    
+    // Zalo yêu cầu máy chủ luôn phải trả lời 200 OK ngay lập tức
+    res.status(200).send('OK');
 });
 
 const PORT = process.env.PORT || 3000;
