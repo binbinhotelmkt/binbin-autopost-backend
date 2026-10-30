@@ -429,7 +429,7 @@ app.post('/webhook/zalo', (req, res) => {
     console.log("📥 [ZALO PAYLOAD RAW]:", JSON.stringify(body, null, 2));
     console.log("====================================");
 
-    // 2. Xử lý lưu database (BẢN NÂNG CẤP LẤY PROFILE)
+    // 2. Xử lý lưu database (BẢN ĐÃ SỬA LỖI REQUIRE)
     if (body && body.event_name === 'user_send_text') {
         const senderId = body.sender?.id;
         const text = body.message?.text;
@@ -437,22 +437,20 @@ app.post('/webhook/zalo', (req, res) => {
         if (senderId && text) {
             console.log(`💬 [ZALO] Khách ${senderId} nhắn: "${text}"`);
             
-            // Xử lý bất đồng bộ để lấy Profile và lưu DB
             (async () => {
                 try {
                     let customerName = `Khách ${senderId.substring(0, 4)}`;
                     let customerAvatar = null;
 
-                    // A. Lấy Access Token Zalo từ bảng social_tokens để có quyền tra cứu
+                    // A. Lấy Access Token Zalo
                     const { data: zaloToken } = await supabase
                         .from('social_tokens')
                         .select('access_token')
                         .eq('platform', 'zalo')
                         .single();
 
-                    // B. Gọi API Zalo để tra cứu Tên và Avatar
+                    // B. Gọi API Zalo để tra cứu Tên và Avatar (Đã bỏ dòng require)
                     if (zaloToken && zaloToken.access_token) {
-                        const axios = require('axios'); // Đảm bảo anh đã khai báo axios ở đầu file
                         const profileUrl = 'https://openapi.zalo.me/v2.0/oa/getprofile';
                         
                         try {
@@ -470,10 +468,9 @@ app.post('/webhook/zalo', (req, res) => {
                         }
                     }
 
-                    // C. Lưu vào bảng chat_conversations (Upsert: Có thì cập nhật avatar/tên/tin mới, chưa có thì tạo mới)
-                    // Lưu ý: ID của conversation có thể cấu tạo từ senderId và platform
                     const conversationId = `zalo_${senderId}`; 
                     
+                    // C. Lưu/Cập nhật hội thoại
                     await supabase.from('chat_conversations').upsert({
                         id: conversationId,
                         customer_id: senderId,
@@ -484,7 +481,7 @@ app.post('/webhook/zalo', (req, res) => {
                         updated_at: new Date().toISOString()
                     }, { onConflict: 'id' });
 
-                    // D. Lưu vào bảng chat_messages
+                    // D. Lưu tin nhắn
                     await supabase.from('chat_messages').insert({
                         conversation_id: conversationId,
                         sender_type: 'customer',
