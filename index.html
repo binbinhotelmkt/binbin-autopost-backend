@@ -675,7 +675,7 @@
         }
 
 
-        // HÀM MỞ CHI TIẾT CHAT (Đã tích hợp Logic Tải thêm tin nhắn cũ)
+        // HÀM MỞ CHI TIẾT CHAT & TẢI TIN CŨ (Đồng bộ tuyệt đối)
         async function openChatDetail(convId, isLoadMore = false) {
             const conv = globalConversations.find(c => c.id === convId);
             if (!conv) return;
@@ -683,13 +683,9 @@
             currentConversationId = convId;
             const msgContainer = document.getElementById('chat_messages_container');
 
-            // Xử lý logic Phân trang (Pagination)
             if (!isLoadMore) {
-                // Nếu bấm mở khách hàng mới -> Reset lại tải 20 tin nhắn
-                currentMessageLimit = 20; 
+                currentMessageLimit = 20;
                 document.getElementById('chat_header_name').innerText = conv.customer_name || 'Khách hàng';
-                
-                // Cập nhật lại Icon trên thanh Header
                 document.getElementById('chat_header_platform').innerHTML = conv.platform === 'facebook' 
                     ? '<div class="flex items-center gap-1 text-blue-600"><img src="https://img.icons8.com/color/48/facebook-new.png" class="w-4 h-4"> Fanpage Facebook</div>' 
                     : '<div class="flex items-center gap-1 text-blue-500"><img src="https://img.icons8.com/color/48/zalo.png" class="w-4 h-4"> Zalo OA</div>';
@@ -698,19 +694,14 @@
                 document.getElementById('chat_header_avatar').innerHTML = `<img src="${avatarUrl}" class="w-full h-full object-cover rounded-full">`;
                 msgContainer.innerHTML = '<div class="text-center text-blue-500 text-sm mt-20"><i class="fa-solid fa-spinner fa-spin"></i> Đang tải lịch sử trò chuyện...</div>';
             } else {
-                // Nếu bấm nút Tải thêm -> Cộng thêm 20 tin nhắn nữa vào biến giới hạn
                 currentMessageLimit += 20;
-                document.getElementById('btn_load_more').innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang tải...';
+                const btn = document.getElementById('btn_load_more');
+                if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang tải...';
             }
 
             try {
-                // ANH ĐIỀN LẠI THÔNG TIN SUPABASE VÀO ĐÂY NHÉ:
-                const SUPABASE_URL = 'https://btmnilmtgrfevafhybmr.supabase.co';
-                const SUPABASE_ANON_KEY = 'sb_publishable_UrNUgHn5aidMmgHX4TTYcg_Bm-CG0F0';
-                const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-                // Quan trọng: Gọi Supabase lấy tin mới nhất (ascending: false) và giới hạn số lượng (limit)
-                const { data: messagesDesc, error } = await supabaseClient
+                // SỬ DỤNG BIẾN TOÀN CỤC supabaseChat
+                const { data: messagesDesc, error } = await supabaseChat
                     .from('chat_messages')
                     .select('*')
                     .eq('conversation_id', convId)
@@ -724,11 +715,10 @@
                     return;
                 }
 
-                // Đảo ngược mảng để vẽ tin cũ lên trên, tin mới xuống dưới cùng
                 const messages = messagesDesc.reverse();
+                const hasMore = messages.length >= currentMessageLimit;
 
-                // Tạo nút "Tải thêm" (Chỉ hiện nếu vẫn còn tin nhắn cũ để tải)
-                const loadMoreBtn = messages.length >= currentMessageLimit 
+                const loadMoreBtn = hasMore 
                     ? `<div class="text-center my-3"><button id="btn_load_more" onclick="openChatDetail('${convId}', true)" class="bg-white border border-gray-300 text-gray-500 text-xs font-semibold px-4 py-1.5 rounded-full hover:bg-gray-50 hover:text-blue-600 shadow-sm transition"><i class="fa-solid fa-clock-rotate-left mr-1"></i> Tải thêm tin nhắn cũ</button></div>` 
                     : '<div class="text-center my-3 text-xs text-gray-400">Đã tải toàn bộ tin nhắn</div>';
 
@@ -737,31 +727,23 @@
                     const textContent = msg.message_text || '[Không có nội dung]';
 
                     if (isMyMessage) {
-                        return `
-                            <div class="flex justify-end mb-2">
-                                <div class="bg-blue-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div>
-                            </div>`;
+                        return `<div class="flex justify-end mb-2"><div class="bg-blue-600 text-white p-3 rounded-2xl rounded-tr-none max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div></div>`;
                     } else {
-                        return `
-                            <div class="flex justify-start mb-2">
-                                <div class="bg-white text-gray-800 p-3 rounded-2xl rounded-tl-none border border-gray-200 max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div>
-                            </div>`;
+                        return `<div class="flex justify-start mb-2"><div class="bg-white text-gray-800 p-3 rounded-2xl rounded-tl-none border border-gray-200 max-w-[70%] shadow-sm"><p class="text-[14px]">${textContent}</p></div></div>`;
                     }
                 }).join('');
                 
-                // Vẽ ra giao diện
                 msgContainer.innerHTML = loadMoreBtn + messagesHtml;
 
-                // Xử lý thanh cuộn
                 if (!isLoadMore) {
-                    // Nếu mở lần đầu, tự động cuộn xuống dưới cùng xem tin mới nhất
                     msgContainer.scrollTop = msgContainer.scrollHeight;
                 }
             } catch (error) {
                 if(!isLoadMore) {
                     msgContainer.innerHTML = `<div class="text-center text-red-500 text-sm mt-20">❌ Lỗi tải tin nhắn: ${error.message}</div>`;
                 } else {
-                    document.getElementById('btn_load_more').innerHTML = '❌ Lỗi tải, thử lại';
+                    const btn = document.getElementById('btn_load_more');
+                    if(btn) btn.innerHTML = '❌ Lỗi tải, thử lại';
                 }
             }
         }

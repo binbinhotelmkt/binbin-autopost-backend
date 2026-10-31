@@ -449,19 +449,64 @@ app.post('/webhook/zalo', async (req, res) => {
                 let customerAvatar = null;
 
                 console.log(`🔍 [Bước 1 & 2] Lấy Profile Zalo...`);
-                const { data: zaloToken } = await supabase.from('social_tokens').select('access_token').eq('platform', 'zalo').single();
+                // Lấy CẢ access_token VÀ refresh_token
+                const { data: zaloToken } = await supabase.from('social_tokens').select('access_token, refresh_token').eq('platform', 'zalo').single();
 
                 if (zaloToken && zaloToken.access_token) {
                     try {
-                        const profileRes = await fetch(`https://openapi.zalo.me/v2.0/oa/getprofile?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
-                            headers: { 'access_token': zaloToken.access_token }
+                        let accessToken = zaloToken.access_token;
+                        
+                        // Lần gọi 1
+                        let profileRes = await fetch(`https://openapi.zalo.me/v2.0/oa/getprofile?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
+                            headers: { 'access_token': accessToken }
                         });
-                        const profileData = await profileRes.json();
-                        if (profileData?.data) {
+                        let profileData = await profileRes.json();
+
+                        // NẾU TOKEN HẾT HẠN (Lỗi -216 hoặc -124) -> TỰ ĐỘNG LÀM MỚI
+                        if (profileData.error === -216 || profileData.error === -124) {
+                            console.log("🔄 Token Zalo hết hạn! Đang dùng Refresh Token để đổi khóa mới...");
+                            
+                            const refreshRes = await fetch('https://oauth.zaloapp.com/v4/oa/access_token', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'secret_key': process.env.ZALO_SECRET_KEY },
+                                body: new URLSearchParams({
+                                    app_id: process.env.ZALO_APP_ID,
+                                    grant_type: 'refresh_token',
+                                    refresh_token: zaloToken.refresh_token
+                                })
+                            });
+                            
+                            const refreshData = await refreshRes.json();
+                            
+                            if (refreshData.access_token) {
+                                accessToken = refreshData.access_token;
+                                // Lưu khóa mới vào DB
+                                await supabase.from('social_tokens').update({
+                                    access_token: accessToken,
+                                    refresh_token: refreshData.refresh_token
+                                }).eq('platform', 'zalo');
+                                
+                                console.log("✅ Đã làm mới Token! Đang gọi lại API Profile...");
+                                // Lần gọi 2 (Với khóa mới)
+                                profileRes = await fetch(`https://openapi.zalo.me/v2.0/oa/getprofile?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
+                                    headers: { 'access_token': accessToken }
+                                });
+                                profileData = await profileRes.json();
+                            } else {
+                                console.log("❌ Lỗi Refresh Token Zalo:", refreshData);
+                            }
+                        }
+
+                        // Cập nhật tên và avatar nếu gọi thành công
+                        if (profileData && profileData.data) {
                             customerName = profileData.data.display_name || customerName;
                             customerAvatar = profileData.data.avatar || null;
+                            console.log(`✅ Lấy thành công Profile: ${customerName}`);
+                        } else {
+                            console.log(`⚠️ Zalo từ chối trả Profile:`, profileData);
                         }
-                    } catch (e) { console.log("⚠️ Lỗi Profile:", e.message); }
+
+                    } catch (e) { console.log("⚠️ Lỗi mạng khi lấy Profile:", e.message); }
                 }
 
                 console.log(`🔍 [Bước 3] Xử lý UUID cho bảng chat_conversations...`);
