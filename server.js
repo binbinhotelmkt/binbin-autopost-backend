@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import cron from 'node-cron';
 import { processAllSocialPosts } from './social_worker.js';
 import axios from 'axios';
+import { registerZaloHistory, saveZaloWebhook } from './zalo-history.js';
 
 const app = express();
 app.use(express.json());
@@ -33,7 +34,7 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN;
 // "Cửa an ninh": Kiểm tra xem trình duyệt có trình ra đúng thẻ Token không
 const requireAuth = (req, res, next) => {
     const token = req.headers['authorization'];
-    if (token === `Bearer ${AUTH_TOKEN}`) {
+    if (AUTH_TOKEN && token === `Bearer ${AUTH_TOKEN}`) {
         next(); // Cho phép đi tiếp vào trong API
     } else {
         res.status(401).json({ success: false, message: 'Từ chối truy cập. Vui lòng đăng nhập lại!' });
@@ -559,14 +560,12 @@ app.post('/webhook/zalo', async (req, res) => {
                 }
 
                 console.log(`🔍 [Bước 4] Lưu tin nhắn với UUID chuẩn: ${validConversationId}`);
-                const { error: insertErr } = await supabase.from('chat_messages').insert({
-                    conversation_id: validConversationId, 
-                    sender_type: 'customer', 
-                    message_text: text, 
+                await saveZaloWebhook(supabase, {
+                    conversation_id: validConversationId,
+                    sender_type: 'customer',
+                    message_text: text,
                     created_at: new Date().toISOString()
-                });
-
-                if (insertErr) throw new Error("Lỗi Insert tin nhắn: " + insertErr.message);
+                }, body);
                 console.log("✅ ĐÃ LƯU THÀNH CÔNG VÀO SUPABASE!");
             }
         }
@@ -590,12 +589,12 @@ app.post('/webhook/zalo', async (req, res) => {
                     .maybeSingle();
                     
                 if (existConv) {
-                    await supabase.from('chat_messages').insert({
+                    await saveZaloWebhook(supabase, {
                         conversation_id: existConv.id,
-                        sender_type: 'page', 
+                        sender_type: 'page',
                         message_text: text,
                         created_at: new Date().toISOString()
-                    });
+                    }, body);
                     
                     await supabase.from('chat_conversations').update({
                         last_message: text,
@@ -658,6 +657,8 @@ app.post('/api/chat/send', async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 });
+
+registerZaloHistory(app, supabase, requireAuth);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
