@@ -296,14 +296,15 @@ async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
 
                 if (tokenData && tokenData.access_token) {
                     try {
-                        const profileRes = await axios.get('https://openapi.zalo.me/v2.0/oa/getprofile', {
+                        const profileRes = await axios.get('https://openapi.zalo.me/v3.0/oa/user/detail', {
                             params: { data: JSON.stringify({ user_id: senderId }) },
                             headers: { 'access_token': tokenData.access_token }
                         });
                         
-                        if (profileRes.data && profileRes.data.data) {
-                            customerName = profileRes.data.data.display_name;
-                            customerAvatar = profileRes.data.data.avatar;
+                        if (profileRes.data && profileRes.data.error === 0 && profileRes.data.data) {
+                            const fields = binbinZaloProfileFields(profileRes.data);
+                            customerName = fields.customer_name || customerName;
+                            customerAvatar = fields.customer_avatar || customerAvatar;
                             console.log(`👤 [Zalo] Đã nhận diện được khách: ${customerName}`);
                         }
                     } catch (zaloErr) {
@@ -421,6 +422,16 @@ app.get('/', (req, res) => {
 // ==========================================
 // CỔNG POST: Nhận tin nhắn thực tế từ ZALO OA (BẢN BẮT MỌI PAYLOAD)
 // ==========================================
+function binbinZaloProfileFields(response) {
+    const fields = {};
+    if (!response || response.error !== 0 || !response.data) return fields;
+    for (const [source, target] of [['display_name', 'customer_name'], ['avatar', 'customer_avatar']]) {
+        const value = response.data[source];
+        if (typeof value === 'string' && value.trim()) fields[target] = value.trim();
+    }
+    return fields;
+}
+
 app.post('/webhook/zalo', async (req, res) => {
     // 1. Phản hồi Zalo ngay lập tức
     res.status(200).send("OK");
@@ -447,6 +458,7 @@ app.post('/webhook/zalo', async (req, res) => {
                 
                 let customerName = `Khách ${senderId.substring(0, 4)}`;
                 let customerAvatar = null;
+                let verifiedProfile = {};
 
                 console.log(`🔍 [Bước 1 & 2] Lấy Profile Zalo...`);
                 // Lấy CẢ access_token VÀ refresh_token
@@ -457,7 +469,7 @@ app.post('/webhook/zalo', async (req, res) => {
                         let accessToken = zaloToken.access_token;
                         
                         // Lần gọi 1
-                        let profileRes = await fetch(`https://openapi.zalo.me/v2.0/oa/getprofile?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
+                        let profileRes = await fetch(`https://openapi.zalo.me/v3.0/oa/user/detail?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
                             headers: { 'access_token': accessToken }
                         });
                         let profileData = await profileRes.json();
@@ -488,7 +500,7 @@ app.post('/webhook/zalo', async (req, res) => {
                                 
                                 console.log("✅ Đã làm mới Token! Đang gọi lại API Profile...");
                                 // Lần gọi 2 (Với khóa mới)
-                                profileRes = await fetch(`https://openapi.zalo.me/v2.0/oa/getprofile?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
+                                profileRes = await fetch(`https://openapi.zalo.me/v3.0/oa/user/detail?data=${encodeURIComponent(JSON.stringify({ user_id: senderId }))}`, {
                                     headers: { 'access_token': accessToken }
                                 });
                                 profileData = await profileRes.json();
@@ -498,9 +510,10 @@ app.post('/webhook/zalo', async (req, res) => {
                         }
 
                         // Cập nhật tên và avatar nếu gọi thành công
-                        if (profileData && profileData.data) {
-                            customerName = profileData.data.display_name || customerName;
-                            customerAvatar = profileData.data.avatar || null;
+                        verifiedProfile = binbinZaloProfileFields(profileData);
+                        if (Object.keys(verifiedProfile).length) {
+                            customerName = verifiedProfile.customer_name || customerName;
+                            customerAvatar = verifiedProfile.customer_avatar || customerAvatar;
                             console.log(`✅ Lấy thành công Profile: ${customerName}`);
                         } else {
                             console.log(`⚠️ Zalo từ chối trả Profile:`, profileData);
@@ -526,8 +539,7 @@ app.post('/webhook/zalo', async (req, res) => {
                     // Khách cũ -> Dùng UUID cũ và cập nhật tin nhắn mới nhất
                     validConversationId = existConv.id;
                     await supabase.from('chat_conversations').update({
-                        customer_name: customerName,
-                        customer_avatar: customerAvatar,
+                        ...verifiedProfile,
                         last_message: text,
                         updated_at: new Date().toISOString()
                     }).eq('id', validConversationId);
