@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import cron from 'node-cron';
 import { processAllSocialPosts } from './social_worker.js';
 import axios from 'axios';
-import { registerZaloHistory, saveZaloWebhook } from './zalo-history.js';
+import { registerZaloHistory, saveZaloWebhook, zaloWebhookLabel } from './zalo-history.js';
 import { registerFacebookChat } from './facebook-chat.js';
 
 const app = express();
@@ -292,11 +292,7 @@ app.post('/webhook/zalo', async (req, res) => {
             const senderId = body.sender?.id;
             let text = body.message?.text || '';
 
-            if (event === 'user_send_image') text = '[Hình ảnh]';
-            else if (event === 'user_send_sticker') text = '[Sticker]';
-            else if (event === 'user_send_audio') text = '[Tin nhắn thoại]';
-            else if (event === 'user_send_location') text = '[Vị trí]';
-            else if (event === 'user_send_link') text = '[Liên kết]';
+            if (!text && event !== 'user_send_text') text = zaloWebhookLabel(event);
 
             if (senderId && text) {
                 console.log(`\n💬 [ZALO] Bắt đầu xử lý tin từ khách ${senderId}...`);
@@ -417,9 +413,9 @@ app.post('/webhook/zalo', async (req, res) => {
         // ==========================================
         // B. LUỒNG ĐỒNG BỘ PANCAKE (Cũng đã sửa dùng UUID)
         // ==========================================
-        if (event === 'oa_send_text' || event === 'oa_send_image') {
+        if (['oa_send_text','oa_send_image','oa_send_gif','oa_send_video','oa_send_audio','oa_send_sticker','oa_send_file','oa_send_link','oa_send_location','oa_send_business_card'].includes(event)) {
             const customerId = body.recipient?.id;
-            let text = body.message?.text || (event === 'oa_send_image' ? '[Hình ảnh Lễ tân gửi]' : '');
+            let text = body.message?.text || (event === 'oa_send_text' ? '' : zaloWebhookLabel(event));
 
             if (customerId && text) {
                 console.log(`🔄 [PANCAKE] Đang đồng bộ tin nhắn gửi cho khách ${customerId}...`);
