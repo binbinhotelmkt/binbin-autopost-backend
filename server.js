@@ -9,10 +9,11 @@ import { processAllSocialPosts } from './social_worker.js';
 import axios from 'axios';
 import { registerZaloHistory, saveZaloWebhook, zaloWebhookLabel } from './zalo-history.js';
 import { registerFacebookChat } from './facebook-chat.js';
+import { registerInstagramChat } from './instagram-chat.js';
 
 const app = express();
 app.use(express.json({verify:(req,res,buf)=>{
-    if (req.originalUrl.split('?')[0] === '/webhook/facebook') req.rawBody = Buffer.from(buf);
+    if (['/webhook/facebook','/webhook/instagram'].includes(req.originalUrl.split('?')[0])) req.rawBody = Buffer.from(buf);
 }}));
 app.use(cors()); 
 
@@ -245,6 +246,7 @@ app.get('/api/google-locations', requireAuth, async (req, res) => {
 // ==========================================
 // Verified Messenger webhooks and authenticated sends; separate from Zalo.
 registerFacebookChat(app, supabase, requireAuth);
+registerInstagramChat(app, supabase, requireAuth);
 
 // ==========================================
 // CỔNG GET: TRANG CHỦ & XÁC THỰC ZALO DOMAIN
