@@ -8,9 +8,12 @@ import cron from 'node-cron';
 import { processAllSocialPosts } from './social_worker.js';
 import axios from 'axios';
 import { registerZaloHistory, saveZaloWebhook } from './zalo-history.js';
+import { registerFacebookChat } from './facebook-chat.js';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({verify:(req,res,buf)=>{
+    if (req.originalUrl.split('?')[0] === '/webhook/facebook') req.rawBody = Buffer.from(buf);
+}}));
 app.use(cors()); 
 
 // CẤU HÌNH MỞ RỘNG BĂNG THÔNG
@@ -240,167 +243,8 @@ app.get('/api/google-locations', requireAuth, async (req, res) => {
 // ==========================================
 // HỆ THỐNG OMNICHANNEL: WEBHOOK & DATABASE
 // ==========================================
-const FB_VERIFY_TOKEN = 'BinBinHotel_2026'; 
-
-// HÀM XỬ LÝ: Tự động phân loại, lấy Tên/Ảnh Meta và lưu vào Supabase
-async function saveMessageToSupabase(senderId, text, platform = 'facebook') {
-    try {
-        let conversationId;
-
-        // 1. Tìm xem khách này đã từng chat chưa
-        const { data: existingConv } = await supabase
-            .from('chat_conversations')
-            .select('id, customer_name')
-            .eq('customer_id', senderId)
-            .eq('platform', platform)
-            .single();
-
-        if (!existingConv) {
-            // KHÁCH MỚI: Khởi tạo dữ liệu mặc định
-            let customerName = "Khách hàng " + senderId.substring(0, 4);
-            let customerAvatar = "";
-
-            // Gọi API Meta để xin Tên thật và Ảnh đại diện
-            if (platform === 'facebook') {
-                const { data: tokenData } = await supabase
-                    .from('social_tokens')
-                    .select('access_token')
-                    .eq('platform', 'facebook')
-                    .single();
-
-                if (tokenData && tokenData.access_token) {
-                    try {
-                        const profileRes = await axios.get(`https://graph.facebook.com/v19.0/${senderId}`, {
-                            params: {
-                                fields: 'name,profile_pic',
-                                access_token: tokenData.access_token
-                            }
-                        });
-                        if (profileRes.data) {
-                            customerName = profileRes.data.name;
-                            customerAvatar = profileRes.data.profile_pic;
-                            console.log(`👤 [Meta] Đã nhận diện được khách: ${customerName}`);
-                        }
-                    } catch (metaErr) {
-                        console.error("❌ [Meta] Lỗi lấy thông tin:", metaErr.response?.data || metaErr.message);
-                    }
-                }
-            }
-
-            // [CODE MỚI] BỔ SUNG: Gọi API Zalo để xin Tên thật và Ảnh đại diện
-            if (platform === 'zalo') {
-                const { data: tokenData } = await supabase
-                    .from('social_tokens')
-                    .select('access_token')
-                    .eq('platform', 'zalo')
-                    .single();
-
-                if (tokenData && tokenData.access_token) {
-                    try {
-                        const profileRes = await axios.get('https://openapi.zalo.me/v3.0/oa/user/detail', {
-                            params: { data: JSON.stringify({ user_id: senderId }) },
-                            headers: { 'access_token': tokenData.access_token }
-                        });
-                        
-                        if (profileRes.data && profileRes.data.error === 0 && profileRes.data.data) {
-                            const fields = binbinZaloProfileFields(profileRes.data);
-                            customerName = fields.customer_name || customerName;
-                            customerAvatar = fields.customer_avatar || customerAvatar;
-                            console.log(`👤 [Zalo] Đã nhận diện được khách: ${customerName}`);
-                        }
-                    } catch (zaloErr) {
-                        console.error("❌ [Zalo] Lỗi lấy thông tin:", zaloErr.message);
-                    }
-                }
-            }
-
-            // Ghi khách mới vào Database kèm Tên và Ảnh
-            const { data: newConv, error: insertError } = await supabase
-                .from('chat_conversations')
-                .insert([{ 
-                    customer_id: senderId, 
-                    platform: platform,
-                    customer_name: customerName,
-                    customer_avatar: customerAvatar,
-                    last_message: text,
-                    is_read: false
-                }])
-                .select('id')
-                .single();
-            
-            if (insertError) throw insertError;
-            conversationId = newConv.id;
-        } else {
-            // KHÁCH CŨ: Cập nhật lại câu chat cuối cùng và đẩy lên đầu danh sách
-            conversationId = existingConv.id;
-            await supabase
-                .from('chat_conversations')
-                .update({ 
-                    last_message: text, 
-                    is_read: false,
-                    updated_at: new Date()
-                })
-                .eq('id', conversationId);
-        }
-
-        // 2. Lưu chi tiết câu chat vào khung bên phải
-        await supabase
-            .from('chat_messages')
-            .insert([{
-                conversation_id: conversationId,
-                sender_type: 'customer',
-                message_text: text
-            }]);
-
-        console.log(`💾 Đã lưu thành công tin nhắn vào Database!`);
-    } catch (err) {
-        console.error("❌ Lỗi lưu tin nhắn vào DB:", err.message);
-    }
-}
-
-// CỔNG GET: Meta kiểm tra máy chủ
-app.get('/webhook/facebook', (req, res) => {
-    if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === FB_VERIFY_TOKEN) {
-        res.status(200).send(req.query['hub.challenge']);
-    } else {
-        res.sendStatus(403);
-    }
-});
-
-// CỔNG POST: Nhận tin nhắn thực tế
-app.post('/webhook/facebook', (req, res) => {
-    const body = req.body;
-
-    if (body && body.object === 'page') {
-        body.entry.forEach(function(entry) {
-            // LUỒNG 1: Nhận chính (Sau này dùng)
-            if (entry.messaging) {
-                const webhookEvent = entry.messaging[0];
-                const senderId = webhookEvent.sender?.id;
-                const text = webhookEvent.message?.text;
-                if (text) {
-                    console.log(`📬 [CHÍNH THỨC] Khách ${senderId} nhắn: "${text}"`);
-                    saveMessageToSupabase(senderId, text, 'facebook');
-                }
-            }
-
-            // LUỒNG 2: Nghe lén (Pancake đang nhận chính)
-            if (entry.standby) {
-                const standbyEvent = entry.standby[0];
-                const senderId = standbyEvent.sender?.id;
-                const text = standbyEvent.message?.text;
-                if (text) {
-                    console.log(`🕵️ [ĐỌC TRỘM - STANDBY] Khách ${senderId} nhắn: "${text}"`);
-                    saveMessageToSupabase(senderId, text, 'facebook');
-                }
-            }
-        });
-        
-        res.status(200).send('EVENT_RECEIVED');
-    } else {
-        res.sendStatus(404);
-    }
-});
+// Verified Messenger webhooks and authenticated sends; separate from Zalo.
+registerFacebookChat(app, supabase, requireAuth);
 
 // ==========================================
 // CỔNG GET: TRANG CHỦ & XÁC THỰC ZALO DOMAIN
@@ -616,46 +460,9 @@ app.post('/webhook/zalo', async (req, res) => {
 // ==========================================
 // API: LỄ TÂN GỬI TIN NHẮN TỪ GIAO DIỆN PMS
 // ==========================================
-app.post('/api/chat/send', async (req, res) => {
-    try {
-        // req.user được lấy từ middleware xác thực token (nếu anh có)
-        const { conversation_id, platform, customer_id, text, media_urls } = req.body;
-
-        if (!conversation_id || !platform || !customer_id) {
-            return res.status(400).json({ success: false, message: "Thiếu thông tin người nhận!" });
-        }
-
-        // 1. LƯU LỊCH SỬ VÀO DATABASE TRƯỚC
-        // Lưu vào bảng chat_messages với sender_type là 'page' hoặc 'admin'
-        const { error: dbError } = await supabase.from('chat_messages').insert([{
-            conversation_id: conversation_id,
-            sender_type: 'page', // Xác định đây là tin do Lễ tân gửi
-            message_text: text || '',
-            attachments: media_urls && media_urls.length > 0 ? JSON.stringify(media_urls) : null,
-            created_at: new Date().toISOString()
-        }]);
-
-        if (dbError) throw new Error("Không thể lưu tin nhắn vào CSDL: " + dbError.message);
-
-        // 2. PHÂN LUỒNG BẮN API SANG FACEBOOK HOẶC ZALO
-        if (platform === 'facebook') {
-            // Logic lấy Page Token từ bảng social_tokens và gọi Axios sang Facebook Graph API
-            // (Chúng ta sẽ viết chi tiết luồng Facebook sau khi anh test UI xong)
-            console.log(`[FB] Đang bắn tin nhắn "${text}" tới ID: ${customer_id}`);
-            
-        } else if (platform === 'zalo') {
-            // Logic lấy Zalo Token từ bảng social_tokens và gọi Zalo OpenAPI
-            // (Chúng ta sẽ viết chi tiết luồng Zalo sau khi anh test UI xong)
-            console.log(`[ZALO] Đang bắn tin nhắn "${text}" tới ID: ${customer_id}`);
-        }
-
-        // 3. TRẢ KẾT QUẢ VỀ CHO TRÌNH DUYỆT CẬP NHẬT 2 DẤU TICK
-        res.json({ success: true, message: "Đã gửi thành công!" });
-
-    } catch (error) {
-        console.error("❌ Lỗi gửi tin nhắn chat:", error);
-        res.status(500).json({ success: false, message: error.message });
-    }
+// Retire the old placeholder route which reported success without sending.
+app.post('/api/chat/send', requireAuth, (req,res) => {
+    res.status(410).json({success:false,message:'Dùng endpoint gửi riêng của Facebook hoặc Zalo. Endpoint cũ đã dừng.'});
 });
 
 registerZaloHistory(app, supabase, requireAuth);
