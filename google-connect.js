@@ -1,3 +1,4 @@
+import {registerGooglePilot} from './google-pilot.js';
 import {randomBytes,createHash,createCipheriv,createDecipheriv} from 'node:crypto';
 import {google} from 'googleapis';
 export const digest=s=>createHash('sha256').update(s).digest('hex');
@@ -39,10 +40,15 @@ export function registerGoogleConnect(app,db,auth,{env=process.env}={}){
   const save=await db.from('google_connections').upsert({id:'primary',client_id:env.GOOGLE_CLIENT_ID,refresh_token_encrypted:seal(tokens.refresh_token,env.GOOGLE_TOKEN_ENCRYPTION_KEY),updated_at:new Date().toISOString()});if(save.error)throw Error('SAVE_FAILED');
   res.send('Đã lưu kết nối Google thành công. Quay lại social.binbinhotel.com và bấm Tải chi nhánh để kiểm tra quyền thực tế.');
  }catch{res.status(502).send('Chưa lưu được kết nối Google. Kiểm tra cấu hình client, callback và cơ sở dữ liệu rồi kết nối lại.');}});
- app.get('/api/google-locations',auth,async(req,res)=>{secure(res);try{
-  const c=await connected();let pageToken,accounts=[],locations=[];
+ async function listLocations(c){
+  let pageToken,accounts=[],locations=[];
   do{const u=new URL('https://mybusinessaccountmanagement.googleapis.com/v1/accounts');if(pageToken)u.searchParams.set('pageToken',pageToken);const {data}=await c.request({url:u.href,timeout:15000});accounts.push(...(data.accounts||[]));pageToken=data.nextPageToken;}while(pageToken);
   for(const a of accounts){pageToken=undefined;do{const u=new URL(`https://mybusinessbusinessinformation.googleapis.com/v1/${a.name}/locations`);u.searchParams.set('readMask','name,title');u.searchParams.set('pageSize','100');if(pageToken)u.searchParams.set('pageToken',pageToken);const {data}=await c.request({url:u.href,timeout:15000});locations.push(...(data.locations||[]).map(l=>({...l,account_name:a.name})));pageToken=data.nextPageToken;}while(pageToken);}
+  return locations;
+ }
+ registerGooglePilot(app,db,auth,{getClient:connected,listLocations});
+ app.get('/api/google-locations',auth,async(req,res)=>{secure(res);try{
+  const c=await connected(),locations=await listLocations(c);
   res.json({success:true,locations,message:locations.length?'Đã tải danh sách chi nhánh.':'Tài khoản vừa kết nối chưa có chi nhánh khả dụng.'});
  }catch(e){const code=e.response?.data?.error?.status;res.status(502).json({success:false,message:code==='PERMISSION_DENIED'?'Google từ chối quyền. Kiểm tra tài khoản quản lý địa điểm, API đã bật và quota.':'Chưa tải được chi nhánh. Kiểm tra kết nối Google và thử lại.',provider_status:typeof code==='string'?code:null});}});
 }
