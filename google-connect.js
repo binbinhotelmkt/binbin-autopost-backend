@@ -15,13 +15,21 @@ export function registerGoogleConnect(app,db,auth,{env=process.env}={}){
   const c=client(),state=randomBytes(32).toString('hex'),nonce=randomBytes(32).toString('hex');
   await db.from('google_oauth_states').delete().lt('expires_at',new Date().toISOString());
   const r=await db.from('google_oauth_states').insert({state_hash:digest(state),browser_hash:digest(nonce),expires_at:new Date(Date.now()+600000).toISOString()});if(r.error)throw Error('STATE_SAVE');
-  res.set('Set-Cookie',`bb_google_oauth=${nonce}; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=600`);
-  res.json({success:true,url:c.generateAuthUrl({access_type:'offline',scope:[scope],prompt:'consent',state})});
+  const launch=new URL('/auth/google/start',env.GOOGLE_REDIRECT_URI);launch.searchParams.set('state',state);launch.searchParams.set('browser',nonce);
+  res.json({success:true,url:launch.href});
  }catch{res.status(503).json({success:false,message:'Chưa tạo được phiên Google. Kiểm tra cấu hình và SQL.'});}});
+ app.get('/auth/google/start',async(req,res)=>{secure(res);res.type('text/plain');try{
+  const c=client(),state=req.query.state,nonce=req.query.browser;
+  if(typeof state!=='string'||typeof nonce!=='string'||!/^[a-f0-9]{64}$/.test(state)||!/^[a-f0-9]{64}$/.test(nonce))return res.status(400).send('Phiên không hợp lệ. Bấm Kết nối Google từ phần mềm.');
+  const r=await db.from('google_oauth_states').update({launched:true}).eq('state_hash',digest(state)).eq('browser_hash',digest(nonce)).eq('launched',false).gt('expires_at',new Date().toISOString()).select('state_hash');
+  if(r.error||r.data?.length!==1)return res.status(400).send('Liên kết đã dùng hoặc hết hạn. Bấm Kết nối Google lại.');
+  res.set('Set-Cookie',`bb_google_oauth=${nonce}; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=600`);
+  res.redirect(303,c.generateAuthUrl({access_type:'offline',scope:[scope],prompt:'consent',state}));
+ }catch{res.status(503).send('Không khởi tạo được phiên. Kiểm tra cấu hình và SQL mới.');}});
  app.get('/auth/google/callback',async(req,res)=>{secure(res);res.type('text/plain');try{
   ready();const state=req.query.state,nonce=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('bb_google_oauth='))?.slice(16);
   if(typeof state!=='string'||!/^[a-f0-9]{64}$/.test(state)||!nonce||!/^[a-f0-9]{64}$/.test(nonce))return res.status(400).send('Phiên Google không hợp lệ. Quay lại phần mềm để kết nối lại.');
-  const r=await db.from('google_oauth_states').delete().eq('state_hash',digest(state)).eq('browser_hash',digest(nonce)).gt('expires_at',new Date().toISOString()).select('state_hash');
+  const r=await db.from('google_oauth_states').delete().eq('launched',true).eq('state_hash',digest(state)).eq('browser_hash',digest(nonce)).gt('expires_at',new Date().toISOString()).select('state_hash');
   if(r.error||r.data?.length!==1)return res.status(400).send('Phiên đã hết hạn hoặc đã được sử dụng. Hãy kết nối lại.');
   res.set('Set-Cookie','bb_google_oauth=; HttpOnly; Secure; SameSite=Lax; Path=/auth/google/callback; Max-Age=0');
   if(req.query.error)return res.status(400).send('Bạn chưa cấp quyền Google. Kết nối cũ được giữ nguyên.');
