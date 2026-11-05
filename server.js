@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { google } from 'googleapis';
+import { registerGoogleConnect } from './google-connect.js';
 import express from 'express';
 import cors from 'cors';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -180,66 +180,7 @@ cron.schedule('* * * * *', () => {
 // ==========================================
 // KẾT NỐI GOOGLE BUSINESS PROFILE (OAUTH 2.0)
 // ==========================================
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = 'http://localhost:3000/auth/google/callback';
-
-const oauth2Client = new google.auth.OAuth2(
-    GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
-    GOOGLE_REDIRECT_URI
-);
-
-// 1. NẠP CHÌA KHÓA VĨNH VIỄN VÀO BỘ NHỚ
-oauth2Client.setCredentials({
-    // Dán mã anh vừa lấy được vào trong cặp dấu nháy đơn dưới đây:
-    refresh_token: process.env.GOOGLE_REFRESH_TOKEN 
-});
-
-// 2. API QUÉT ĐỊA BÀN: LẤY DANH SÁCH CHI NHÁNH BIN BIN HOTEL
-app.get('/api/google-locations', requireAuth, async (req, res) => {
-    try {
-        console.log("🔍 Đang kết nối Google lấy danh sách chi nhánh...");
-        const tokenResponse = await oauth2Client.getAccessToken();
-        const accessToken = tokenResponse.token;
-
-        const accRes = await fetch('https://mybusinessaccountmanagement.googleapis.com/v1/accounts', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const accData = await accRes.json();
-        
-        // In thẳng phản hồi gốc từ Google ra Terminal để bắt bệnh
-        console.log("=========================================");
-        console.log("🚨 PHẢN HỒI GỐC TỪ GOOGLE:");
-        console.log(accData);
-        console.log("=========================================");
-        
-        // Nếu Google báo lỗi (VD: Chưa bật API)
-        if (accData.error) {
-            return res.json({ success: false, message: `Lỗi từ Google: ${accData.error.message}` });
-        }
-        
-        // Nếu Google không báo lỗi nhưng danh sách trống
-        if (!accData.accounts || accData.accounts.length === 0) {
-            return res.json({ success: false, message: "Email anh vừa xác thực KHÔNG quản lý bất kỳ cơ sở nào trên Google Maps." });
-        }
-        
-        const accountName = accData.accounts[0].name; 
-        
-        const locRes = await fetch(`https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations?readMask=name,title`, {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        const locData = await locRes.json();
-
-        console.log("🏢 DANH SÁCH CHI NHÁNH TRÊN GOOGLE MAPS:");
-        console.log(locData.locations);
-
-        res.json({ success: true, message: "Quét thành công! Hãy xem danh sách chi nhánh in ra ở cửa sổ Terminal Node.js!" });
-    } catch (error) {
-        console.error("[Google Maps] ❌ Lỗi:", error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+registerGoogleConnect(app, supabase, requireAuth);
 
 // ==========================================
 // HỆ THỐNG OMNICHANNEL: WEBHOOK & DATABASE
