@@ -245,7 +245,8 @@ async function processAllSocialPosts() {
     const { data: posts, error: fetchError } = await supabase
         .from('social_posts')
         .select('*')
-        .or('status_facebook.eq.pending,status_zalo.eq.pending,status_instagram.eq.pending'); 
+        .or('status_facebook.eq.pending,status_zalo.eq.pending,status_instagram.eq.pending')
+        .or(`scheduled_time.is.null,scheduled_time.lte.${new Date().toISOString()}`); 
 
     if (fetchError) return console.error("❌ Lỗi truy vấn DB:", fetchError.message);
     if (!posts || posts.length === 0) return;
@@ -310,7 +311,7 @@ async function processAllSocialPosts() {
                 (post.status_instagram !== 'pending' || updateData.status_instagram === 'published') &&
                 (post.status_zalo !== 'pending' || updateData.status_zalo === 'published');
 
-            if (isAllChannelsFinished && post.media_urls && post.media_urls.length > 0) {
+            if (!post.google_targets?.length && isAllChannelsFinished && post.media_urls && post.media_urls.length > 0) {
                 console.log(`⏳ Đang cho Facebook/Zalo 60 giây để tải ảnh trước khi dọn rác...`);
                 
                 setTimeout(async () => {

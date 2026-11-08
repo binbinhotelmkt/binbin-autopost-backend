@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {validateGoogle} from './google-publisher.js';
 import 'dotenv/config';
 import { registerGoogleConnect } from './google-connect.js';
 import express from 'express';
@@ -82,26 +84,32 @@ app.post('/api/generate-content', requireAuth, async (req, res) => {
 // ==========================================
 app.post('/api/publish', requireAuth, async (req, res) => {
     try {
-        const { content, mediaUrls, platforms, isPostNow, scheduledTime, isDraft } = req.body;
-        
-        // Xác định trạng thái: Nếu là nháp thì gán 'draft', xuất bản thì gán 'pending'
-        const status = isDraft ? 'draft' : 'pending';
-
-        const postData = {
-            content: content,
-            media_urls: mediaUrls || [],
-            scheduled_time: (isPostNow || isDraft) ? null : scheduledTime,
-            status_facebook: platforms.includes('facebook') ? status : null,
-            status_instagram: platforms.includes('instagram') ? status : null,
-            status_zalo: platforms.includes('zalo') ? status : null,
-        };
-
-        const { data, error } = await supabase.from('social_posts').insert([postData]).select();
-        if (error) throw error;
+        const { content, mediaUrls=[], mediaTypes=[], platforms, isPostNow, scheduledTime, isDraft, clientRequestId } = req.body;
+        if (!Array.isArray(platforms)||!platforms.length||platforms.some(x=>!['google','facebook','instagram','zalo'].includes(x))) throw Error('Chọn kênh hợp lệ.');
+        if(typeof content!=='string'||!content.trim())throw Error('Nhập nội dung.');
+        if(!/^[a-f0-9-]{36}$/i.test(clientRequestId||''))throw Error('Vui lòng tải lại giao diện mới.');
+        const requestHash=createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
+        const previous=await supabase.from('social_posts').select('*').eq('client_request_id',clientRequestId).maybeSingle();
+        if(previous.error)throw previous.error;
+        if(previous.data){if(previous.data.request_hash!==requestHash)throw Error('Mã gửi đã dùng với nội dung khác.');return res.json({success:true,data:[previous.data]});}
+        let scheduled=null;
+        if(!isPostNow&&!isDraft){const date=new Date(scheduledTime);if(!Number.isFinite(+date)||+date<Date.now())throw Error('Chọn giờ đăng trong tương lai.');scheduled=date.toISOString();}
+        let targets=[],g={types:mediaTypes,link:''};
+        if(platforms.includes('google')){g=validateGoogle(req.body,process.env);targets=await googlePublisher.validateTargets(g.targets);}
+        const status=isDraft?'draft':'pending';
+        const postData={content,media_urls:mediaUrls,media_types:g.types,scheduled_time:scheduled,
+          status_facebook:platforms.includes('facebook')?status:null,
+          status_instagram:platforms.includes('instagram')?status:null,
+          status_zalo:platforms.includes('zalo')?status:null,
+          status_google:platforms.includes('google')?status:null,
+          google_targets:targets,google_link:g.link,client_request_id:clientRequestId,request_hash:requestHash};
+        let {data,error}=await supabase.from('social_posts').insert([postData]).select();
+        if(error?.code==='23505'){const same=await supabase.from('social_posts').select('*').eq('client_request_id',clientRequestId).single();if(same.error||same.data.request_hash!==requestHash)throw Error('Mã gửi bị trùng.');data=[same.data];error=null;}
+        if(error)throw error;
 
         res.json({ success: true, message: isDraft ? 'Đã lưu nháp thành công!' : 'Đã đưa vào hàng đợi xuất bản!', data });
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        res.status(error.code ? 500 : 400).json({ success: false, message: error.message });
     }
 });
 
@@ -112,7 +120,7 @@ app.get('/api/config', requireAuth, (req, res) => {
     res.json({
         success: true,
         supabaseUrl: process.env.SUPABASE_URL,
-        supabaseKey: process.env.SUPABASE_KEY
+        supabaseKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || ''
     });
 });
 
@@ -138,7 +146,10 @@ app.get('/api/posts', requireAuth, async (req, res) => {
 // ==========================================
 app.delete('/api/posts/:id', requireAuth, async (req, res) => {
     try {
-        const { error } = await supabase.from('social_posts').delete().eq('id', req.params.id);
+        const existing=await supabase.from('social_posts').select('status_google').eq('id',req.params.id).single();
+        if(existing.error)throw existing.error;
+        if(existing.data.status_google==='processing')throw Error('Google đang xử lý. Chờ hoàn tất trước khi xóa.');
+        const { error } = await supabase.from('social_posts').delete().eq('id', req.params.id).or('status_google.is.null,status_google.neq.processing');
         if (error) throw error;
         res.json({ success: true, message: 'Đã xóa bài viết!' });
     } catch (error) {
@@ -160,6 +171,7 @@ app.put('/api/posts/:id/publish', requireAuth, async (req, res) => {
         if (post.status_facebook === 'draft') updateData.status_facebook = 'pending';
         if (post.status_instagram === 'draft') updateData.status_instagram = 'pending';
         if (post.status_zalo === 'draft') updateData.status_zalo = 'pending';
+        if (post.status_google === 'draft') updateData.status_google = 'pending';
 
         const { error: updateErr } = await supabase.from('social_posts').update(updateData).eq('id', req.params.id);
         if (updateErr) throw updateErr;
@@ -175,12 +187,13 @@ app.put('/api/posts/:id/publish', requireAuth, async (req, res) => {
 cron.schedule('* * * * *', () => {
     console.log("⏰ [Cron] Đang rà soát bài viết theo lịch hẹn...");
     processAllSocialPosts();
+    googlePublisher.run();
 });
 
 // ==========================================
 // KẾT NỐI GOOGLE BUSINESS PROFILE (OAUTH 2.0)
 // ==========================================
-registerGoogleConnect(app, supabase, requireAuth);
+const googlePublisher = registerGoogleConnect(app, supabase, requireAuth);
 
 // ==========================================
 // HỆ THỐNG OMNICHANNEL: WEBHOOK & DATABASE

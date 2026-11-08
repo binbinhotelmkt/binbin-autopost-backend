@@ -1,3 +1,4 @@
+import {createGooglePublisher} from './google-publisher.js';
 import {registerGooglePilot} from './google-pilot.js';
 import {randomBytes,createHash,createCipheriv,createDecipheriv} from 'node:crypto';
 import {google} from 'googleapis';
@@ -47,8 +48,10 @@ export function registerGoogleConnect(app,db,auth,{env=process.env}={}){
   return locations;
  }
  registerGooglePilot(app,db,auth,{getClient:connected,listLocations});
+ const publisher=createGooglePublisher(app,db,auth,{getClient:connected,listLocations,env});
  app.get('/api/google-locations',auth,async(req,res)=>{secure(res);try{
   const c=await connected(),locations=await listLocations(c);
   res.json({success:true,locations,message:locations.length?'Đã tải danh sách chi nhánh.':'Tài khoản vừa kết nối chưa có chi nhánh khả dụng.'});
  }catch(e){const code=e.response?.data?.error?.status;res.status(502).json({success:false,message:code==='PERMISSION_DENIED'?'Google từ chối quyền. Kiểm tra tài khoản quản lý địa điểm, API đã bật và quota.':'Chưa tải được chi nhánh. Kiểm tra kết nối Google và thử lại.',provider_status:typeof code==='string'?code:null});}});
+ return publisher;
 }
